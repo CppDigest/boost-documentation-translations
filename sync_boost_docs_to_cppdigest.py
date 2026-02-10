@@ -361,12 +361,12 @@ def get_master_sha(
                     raise RuntimeError(
                         f"Failed to push master to {repo_url}: exit {push_result.returncode}"
                     )
-            run(["git", "remote", "set-url", "origin", push_url], cwd=target_repo)
+            rev_parse = run(["git", "rev-parse", "HEAD"], cwd=target_repo)
         else:
             run(["git", "push", "origin", "master"], cwd=target_repo,
                 env={**os.environ, "GITHUB_TOKEN": token})
-        run(["git", "fetch", "origin", "master"], cwd=target_repo)
-        rev_parse = run(["git", "rev-parse", "origin/master"], cwd=target_repo)
+            run(["git", "fetch", "origin", "master"], cwd=target_repo)
+            rev_parse = run(["git", "rev-parse", "origin/master"], cwd=target_repo)
     master_sha = rev_parse.stdout.strip()
     if not master_sha:
         raise RuntimeError(f"Failed to get master SHA for {target_repo}")
