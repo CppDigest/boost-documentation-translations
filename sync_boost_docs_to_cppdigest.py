@@ -4,7 +4,9 @@ Sync Boost library documentation from boostorg/boost to CppDigest organization.
 
 Triggered by CI (repository_dispatch). For each libs/ submodule:
 1. Clone boostorg repo at given ref; keep only doc folders per meta/libraries.json.
-2. Update or create CppDigest/<submodule> with that content on docs branch.
+2. Update or create CppDigest/<submodule>: push doc content to master; then ensure
+   local branch exists and, if there is no open PR from boost-<sub>-<lang>-translation-<version>,
+   rebase local onto master.
 3. Update boost-documentation-translations submodule links in libs/ to point to
    latest commit of CppDigest/<submodule> master branch.
 """
@@ -24,7 +26,8 @@ from urllib.request import Request, urlopen
 
 USER_AGENT = "BoostDocsSync/1.0"
 BOOST_ORG = "boostorg"
-DOCS_BRANCH = "local"
+MASTER_BRANCH = "master"
+LOCAL_BRANCH = "local"
 GITHUB_API_BASE = "https://api.github.com"
 GITMODULES_URL_TEMPLATE = "https://raw.githubusercontent.com/boostorg/boost/{ref}/.gitmodules"
 LIBS_JSON_TEMPLATE = "https://raw.githubusercontent.com/boostorg/{repo}/{ref}/meta/libraries.json"
@@ -77,12 +80,14 @@ def get_libraries_from_repo(
         if e.code == 404:
             return []
         raise
-    except URLError:
+    except URLError as e:
+        print(f"URLError fetching libraries.json: {e}", file=sys.stderr)
         return []
 
     try:
         raw = json.loads(content)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        print(f"JSONDecodeError parsing libraries.json: {e}", file=sys.stderr)
         return []
 
     if isinstance(raw, list):
@@ -142,6 +147,7 @@ def api_get_status(path: str, token: str) -> int:
         with urlopen(req, timeout=30) as r:
             return r.status
     except HTTPError as e:
+        print(f"api_get_status HTTPError: {e.code} {e}", file=sys.stderr)
         return e.code
 
 
@@ -376,14 +382,65 @@ def get_master_sha(
     return master_sha
 
 
+def has_open_translation_pr(org: str, repo: str, libs_ref: str, token: str) -> bool:
+    """True if repo has an open PR from a branch like boost-<submodule>-<lang>-translation-<version>."""
+    url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/pulls?state=open"
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(url, headers=headers)
+    try:
+        with urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except (HTTPError, URLError, json.JSONDecodeError) as e:
+        print(f"Error checking open PRs: {e}", file=sys.stderr)
+        return False
+    pattern = re.compile(
+        r"^boost-" + re.escape(repo) + r"-.+-translation-.+$", re.IGNORECASE
+    )
+    for pr in data:
+        ref = (pr.get("head") or {}).get("ref") or ""
+        if pattern.match(ref):
+            return True
+    return False
+
+
+def update_local_rebase_onto_master(
+    repo_dir: str, token: str, repo_url: str,
+) -> None:
+    """Update local branch by rebasing onto origin/master, then push (force-with-lease)."""
+    run(["git", "fetch", "origin", MASTER_BRANCH], cwd=repo_dir)
+    run(["git", "fetch", "origin", LOCAL_BRANCH], cwd=repo_dir, check=False)
+    rev_local = run(
+        ["git", "rev-parse", f"origin/{LOCAL_BRANCH}"],
+        cwd=repo_dir,
+        check=False,
+    )
+    if rev_local.returncode != 0:
+        run(["git", "checkout", "-b", LOCAL_BRANCH, f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
+    else:
+        run(["git", "checkout", "-B", LOCAL_BRANCH, f"origin/{LOCAL_BRANCH}"], cwd=repo_dir)
+        run(["git", "rebase", f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
+    push_url = authed_url(repo_url, token)
+    run(
+        ["git", "push", "--force-with-lease", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
+        cwd=repo_dir,
+        env={**os.environ, "GITHUB_TOKEN": token},
+    )
+
+
 def sync_existing_repo(
     dest_repo: str,
     submodule_clone: str,
-    docs_branch: str,
+    master_branch: str,
     libs_ref: str,
+    org: str,
+    submodule_name: str,
     token: str,
+    repo_url: str,
 ) -> None:
-    """Wipe dest_repo (except .git), copy from submodule_clone, commit and push to docs_branch."""
+    """Wipe dest_repo (except .git), copy from submodule_clone, commit and push to master.
+    Then, if there is no open PR from boost-<sub>-<lang>-translation-<version>, rebase local onto master."""
     for item in os.listdir(dest_repo):
         if item == ".git":
             continue
@@ -406,8 +463,11 @@ def sync_existing_repo(
     run(["git", "add", "-A"], cwd=dest_repo)
     run(["git", "status", "--short"], cwd=dest_repo)
     run(["git", "commit", "-m", f"Update the original documentation of {libs_ref}"], cwd=dest_repo, check=False)
-    run(["git", "push", "origin", docs_branch], cwd=dest_repo,
+    run(["git", "push", "origin", master_branch], cwd=dest_repo,
         env={**os.environ, "GITHUB_TOKEN": token})
+    if has_open_translation_pr(org, submodule_name, libs_ref, token):
+        return
+    update_local_rebase_onto_master(dest_repo, token, repo_url)
 
 
 def create_new_repo_and_push(
@@ -415,28 +475,23 @@ def create_new_repo_and_push(
     submodule_name: str,
     submodule_clone: str,
     cppdigest_repo_url: str,
-    docs_branch: str,
     libs_ref: str,
     token: str,
 ) -> None:
-    """Create CppDigest repo, push pruned docs to docs_branch, then create and push empty master.
-    Follows GitHub's 'push an existing repository' pattern: init, add, commit, branch -M, remote add, push -u.
-    """
+    """Create CppDigest repo, push pruned docs to master, then create local branch (rebase onto master) and push."""
     create_repo(org, submodule_name, token)
     run(["git", "init"], cwd=submodule_clone)
     run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=submodule_clone)
     run(["git", "config", "user.name", "CI"], cwd=submodule_clone)
     run(["git", "add", "-A"], cwd=submodule_clone)
     run(["git", "commit", "-m", f"Create the original documentation of {libs_ref}"], cwd=submodule_clone)
-    run(["git", "branch", "-M", docs_branch], cwd=submodule_clone)
+    run(["git", "branch", "-M", MASTER_BRANCH], cwd=submodule_clone)
     run(["git", "remote", "remove", "origin"], cwd=submodule_clone, check=False)
     run(["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)], cwd=submodule_clone)
-    run(["git", "push", "-u", "origin", docs_branch], cwd=submodule_clone,
+    run(["git", "push", "-u", "origin", MASTER_BRANCH], cwd=submodule_clone,
         env={**os.environ, "GITHUB_TOKEN": token})
-    run(["git", "checkout", "--orphan", "master"], cwd=submodule_clone)
-    run(["git", "rm", "-rf", "."], cwd=submodule_clone, check=False)
-    run(["git", "commit", "--allow-empty", "-m", "Empty master branch"], cwd=submodule_clone, check=False)
-    run(["git", "push", "origin", "master"], cwd=submodule_clone,
+    run(["git", "checkout", "-b", LOCAL_BRANCH], cwd=submodule_clone)
+    run(["git", "push", "-u", "origin", LOCAL_BRANCH], cwd=submodule_clone,
         env={**os.environ, "GITHUB_TOKEN": token})
 
 
@@ -478,14 +533,13 @@ def finalize_translations_repo(
 def process_one_submodule(
     submodule_name: str,
     libs_ref: str,
-    docs_branch: str,
     org: str,
     boost_work: str,
     cppdigest_work: str,
     token: str,
 ) -> Optional[Tuple[str, bool]]:
     """
-    Clone boost submodule, prune to docs, update or create CppDigest repo.
+    Clone boost submodule, prune to docs, update or create CppDigest repo (docs on master; local rebased if no open translation PR).
     Returns (target_repo, exists) for use with get_master_sha and update_translations_submodule, or None if skipped.
     """
     libs = get_libraries_from_repo(submodule_name, libs_ref, token=token)
@@ -515,15 +569,19 @@ def process_one_submodule(
     if exists:
         dest_repo = os.path.join(cppdigest_work, submodule_name)
         try:
-            clone_repo_keep_git(cppdigest_repo_url, docs_branch, dest_repo, token=token)
-        except subprocess.CalledProcessError:
-            run(["git", "clone", "--depth", "1", "--branch", docs_branch,
+            clone_repo_keep_git(cppdigest_repo_url, MASTER_BRANCH, dest_repo, token=token)
+        except subprocess.CalledProcessError as e:
+            print(f"  clone_repo_keep_git failed: {e}", file=sys.stderr)
+            run(["git", "clone", "--depth", "1", "--branch", MASTER_BRANCH,
                  authed_url(cppdigest_repo_url, token), dest_repo])
-        sync_existing_repo(dest_repo, submodule_clone, docs_branch, libs_ref, token)
+        sync_existing_repo(
+            dest_repo, submodule_clone, MASTER_BRANCH, libs_ref,
+            org, submodule_name, token, cppdigest_repo_url,
+        )
         return (dest_repo, True)
     else:
         create_new_repo_and_push(
-            org, submodule_name, submodule_clone, cppdigest_repo_url, docs_branch, libs_ref, token
+            org, submodule_name, submodule_clone, cppdigest_repo_url, libs_ref, token
         )
         return (submodule_clone, False)
 
@@ -536,8 +594,8 @@ def main() -> None:
     parser.add_argument("--translations-repo", default="boost-documentation-translations",
                         help="Repo holding submodule links")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token")
-    parser.add_argument("--limit", type=int, default=2,
-                        help="Process only first N submodules (default: 2). Use 0 for all.")
+    parser.add_argument("--limit", type=int, default=1,
+                        help="Process only first N submodules (default: 1). Use 0 for all.")
     args = parser.parse_args()
 
     if not args.token:
@@ -547,7 +605,6 @@ def main() -> None:
     token = args.token
     org = args.org
     translations_repo = args.translations_repo
-    docs_branch = DOCS_BRANCH
 
     limit = None if args.limit == 0 else args.limit
     lib_submodules = get_lib_submodules(args.gitmodules_ref, token, limit=limit)
@@ -562,7 +619,7 @@ def main() -> None:
         for i, (submodule_name, _path_in_boost) in enumerate(lib_submodules, 1):
             print(f"[{i}/{len(lib_submodules)}] {submodule_name} ...", file=sys.stderr)
             result = process_one_submodule(
-                submodule_name, args.libs_ref, docs_branch, org,
+                submodule_name, args.libs_ref, org,
                 boost_work, cppdigest_work, token,
             )
             if result is None:
