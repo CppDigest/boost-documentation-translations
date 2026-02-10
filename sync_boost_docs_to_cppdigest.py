@@ -39,6 +39,7 @@ from collect_boost_libraries_extensions import (
 
 USER_AGENT = "BoostDocsSync/1.0"
 BOOST_ORG = "boostorg"
+DOCS_BRANCH = "local"
 
 
 def run(
@@ -238,7 +239,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Sync Boost docs to CppDigest")
     parser.add_argument("--gitmodules-ref", default="master", help="Ref for .gitmodules (e.g. master)")
     parser.add_argument("--libs-ref", default="develop", help="Ref for libs (e.g. boost-1.90.0 or develop)")
-    parser.add_argument("--docs-branch", default="main", help="Branch name for docs in CppDigest repos")
     parser.add_argument("--org", default="CppDigest", help="Target organization")
     parser.add_argument("--translations-repo", default="boost-documentation-translations", help="Repo holding submodule links")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token")
@@ -254,7 +254,7 @@ def main() -> None:
     libs_ref = args.libs_ref
     org = args.org
     translations_repo = args.translations_repo
-    docs_branch = args.docs_branch
+    docs_branch = DOCS_BRANCH
 
     # 1) Fetch .gitmodules and list libs/ submodules
     url = GITMODULES_URL_TEMPLATE.format(ref=gitmodules_ref)
