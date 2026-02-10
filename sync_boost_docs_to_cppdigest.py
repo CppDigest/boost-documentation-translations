@@ -346,7 +346,21 @@ def get_master_sha(
         run(["git", "commit", "--allow-empty", "-m", "Empty master branch"], cwd=target_repo, check=False)
         if repo_url:
             push_url = authed_url(repo_url, token)
-            run(["git", "push", push_url, "master"], cwd=target_repo)
+            push_result = run(["git", "push", push_url, "master"], cwd=target_repo, check=False)
+            if push_result.returncode != 0:
+                if push_result.stderr:
+                    print(push_result.stderr, file=sys.stderr)
+                push_result = run(
+                    ["git", "push", "--force", push_url, "master"],
+                    cwd=target_repo,
+                    check=False,
+                )
+                if push_result.returncode != 0:
+                    if push_result.stderr:
+                        print(push_result.stderr, file=sys.stderr)
+                    raise RuntimeError(
+                        f"Failed to push master to {repo_url}: exit {push_result.returncode}"
+                    )
             run(["git", "remote", "set-url", "origin", push_url], cwd=target_repo)
         else:
             run(["git", "push", "origin", "master"], cwd=target_repo,
