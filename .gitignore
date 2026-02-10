@@ -4,3 +4,4 @@ data/
 .cursor/
 
 trigger_sync_workflow.py
+push_project.py

@@ -441,13 +441,29 @@ def main() -> None:
                 run(["git", "config", "user.name", "CI"], cwd=translations_dir)
 
             if exists:
-                run(["git", "fetch", "origin", "master"], cwd=target_repo)
-            master_sha = run(
+                run(["git", "fetch", "origin", "master"], cwd=target_repo, check=False)
+            rev_parse = run(
                 ["git", "rev-parse", "origin/master"],
                 cwd=target_repo,
                 capture_output=True,
                 text=True,
-            ).stdout.strip()
+                check=False,
+            )
+            if rev_parse.returncode != 0 and exists:
+                # Existing repo may lack master; create and push empty master
+                run(["git", "checkout", "--orphan", "master"], cwd=target_repo)
+                run(["git", "rm", "-rf", "."], cwd=target_repo, check=False)
+                run(["git", "commit", "--allow-empty", "-m", "Empty master branch"], cwd=target_repo, check=False)
+                run(["git", "push", "origin", "master"], cwd=target_repo,
+                    env={**os.environ, "GITHUB_TOKEN": token})
+                run(["git", "fetch", "origin", "master"], cwd=target_repo)
+                rev_parse = run(
+                    ["git", "rev-parse", "origin/master"],
+                    cwd=target_repo,
+                    capture_output=True,
+                    text=True,
+                )
+            master_sha = rev_parse.stdout.strip()
 
             libs_path = os.path.join(translations_dir, "libs", submodule_name)
             if os.path.isdir(libs_path) and os.path.isdir(os.path.join(libs_path, ".git")):
