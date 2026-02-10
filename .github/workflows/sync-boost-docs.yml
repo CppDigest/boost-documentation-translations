@@ -1,0 +1,52 @@
+# Sync Boost library documentation from boostorg/boost to CppDigest org.
+#
+# Trigger: repository_dispatch with event_type "sync-boost-docs".
+# Example: POST /repos/{owner}/{repo}/dispatches
+#   Body: {"event_type": "sync-boost-docs", "client_payload": {"version": "boost-1.90.0", "gitmodules_ref": "master"}}
+#
+# client_payload (optional):
+#   version: ref for cloning libs (e.g. boost-1.90.0). Default: develop.
+#   gitmodules_ref: ref for .gitmodules from boostorg/boost. Default: master.
+#   docs_branch: branch name for docs in CppDigest repos. Default: main.
+#
+# Required secret: SYNC_TOKEN — PAT with repo (and org repo create) permissions for CppDigest.
+
+name: Sync Boost docs to CppDigest
+
+on:
+  repository_dispatch:
+    types: [sync-boost-docs]
+
+env:
+  ORG: CppDigest
+  TRANSLATIONS_REPO: boost-documentation-translations
+  DOCS_BRANCH: main
+  MASTER_BRANCH: master
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run sync script
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          GITMODULES_REF: ${{ github.event.client_payload.gitmodules_ref || 'master' }}
+          LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
+          DOCS_BRANCH: ${{ github.event.client_payload.docs_branch || 'main' }}
+        run: |
+          python sync_boost_docs_to_cppdigest.py \
+            --gitmodules-ref "$GITMODULES_REF" \
+            --libs-ref "$LIBS_REF" \
+            --docs-branch "$DOCS_BRANCH" \
+            --org "${{ env.ORG }}" \
+            --translations-repo "${{ env.TRANSLATIONS_REPO }}"
