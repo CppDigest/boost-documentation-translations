@@ -7,13 +7,12 @@ Triggered by CI (repository_dispatch). For each libs/ submodule:
 2. Update or create CppDigest/<submodule> with that content on docs branch.
 3. Update boost-documentation-translations submodule links in libs/ to point to
    latest commit of CppDigest/<submodule> master branch.
-
-Reuses parsing and fetch logic from collect_boost_libraries_extensions.
 """
 
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,24 +21,94 @@ from typing import List, Optional, Set, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-# Allow importing from data/ when run from repo root (e.g. CI)
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_data_dir = os.path.join(_script_dir, "data")
-if os.path.isdir(_data_dir):
-    sys.path.insert(0, _data_dir)
-
-# Reuse from collect_boost_libraries_extensions
-from collect_boost_libraries_extensions import (
-    GITMODULES_URL_TEMPLATE,
-    GITHUB_API_BASE,
-    fetch_url,
-    get_libraries_from_repo,
-    parse_gitmodules,
-)
-
 USER_AGENT = "BoostDocsSync/1.0"
 BOOST_ORG = "boostorg"
 DOCS_BRANCH = "local"
+GITHUB_API_BASE = "https://api.github.com"
+GITMODULES_URL_TEMPLATE = "https://raw.githubusercontent.com/boostorg/boost/{ref}/.gitmodules"
+LIBS_JSON_TEMPLATE = "https://raw.githubusercontent.com/boostorg/{repo}/{ref}/meta/libraries.json"
+REPO_URL_TEMPLATE = "https://github.com/boostorg/{repo}.git"
+GITMODULES_PATH_PREFIX = "path = "
+
+
+def fetch_url(url: str, token: Optional[str] = None) -> str:
+    """Fetch URL; return response body as string. Optional token for GitHub rate limit."""
+    headers = {"User-Agent": USER_AGENT}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(url, headers=headers)
+    with urlopen(req, timeout=30) as r:
+        return r.read().decode("utf-8")
+
+
+def parse_gitmodules(content: str) -> List[Tuple[str, str]]:
+    """Parse .gitmodules and return list of (submodule_name, path)."""
+    entries = []
+    current_name = None
+    current_path = None
+    for line in content.splitlines():
+        line = line.strip()
+        m = re.match(r'\[submodule\s+"([^"]+)"\]', line)
+        if m:
+            if current_name is not None and current_path is not None:
+                entries.append((current_name, current_path))
+            current_name = m.group(1)
+            current_path = None
+            continue
+        if line.startswith(GITMODULES_PATH_PREFIX):
+            current_path = line[len(GITMODULES_PATH_PREFIX):].strip()
+    if current_name is not None and current_path is not None:
+        entries.append((current_name, current_path))
+    return entries
+
+
+def get_libraries_from_repo(
+    submodule_name: str, ref: str, token: Optional[str] = None
+) -> List[Tuple[str, str, str]]:
+    """
+    Fetch meta/libraries.json for a submodule at ref (branch/tag).
+    Returns list of (first_column, repo_url, subpath).
+    """
+    url = LIBS_JSON_TEMPLATE.format(repo=submodule_name, ref=ref)
+    try:
+        content = fetch_url(url, token=token)
+    except HTTPError as e:
+        if e.code == 404:
+            return []
+        raise
+    except URLError:
+        return []
+
+    try:
+        raw = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+
+    if isinstance(raw, list):
+        libs = raw
+    elif isinstance(raw, dict):
+        libs = [raw]
+    else:
+        return []
+
+    repo_url = REPO_URL_TEMPLATE.format(repo=submodule_name)
+    result = []
+    for obj in libs:
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get("name") or obj.get("key", "")
+        key = obj.get("key", "")
+        if not name or not key:
+            continue
+        if key == submodule_name:
+            first_column = key
+            subpath = ""
+        else:
+            prefix = submodule_name + "/"
+            first_column = name
+            subpath = key[len(prefix):] if key.startswith(prefix) else key
+        result.append((first_column, repo_url, subpath))
+    return result
 
 
 def run(
@@ -283,7 +352,7 @@ def main() -> None:
             print(f"[{i}/{len(lib_submodules)}] {submodule_name} ...", file=sys.stderr)
 
             # Libraries and doc paths for this submodule
-            libs = get_libraries_from_repo(submodule_name, libs_ref)
+            libs = get_libraries_from_repo(submodule_name, libs_ref, token=token)
             if not libs:
                 print(f"  No libraries.json entries, skipping.", file=sys.stderr)
                 continue
