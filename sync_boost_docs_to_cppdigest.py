@@ -296,11 +296,7 @@ def clone_repo_keep_git(
     run(["git", "clone", "--depth", "1", "--branch", branch, url, dest])
 
 
-def get_lib_submodules(
-    gitmodules_ref: str,
-    token: str,
-    limit: Optional[int] = None,
-) -> List[Tuple[str, str]]:
+def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]:
     """Fetch .gitmodules from boostorg/boost and return libs/ submodules (name, path)."""
     url = GITMODULES_URL_TEMPLATE.format(ref=gitmodules_ref)
     print(f"Fetching .gitmodules from boostorg/boost at {gitmodules_ref}...", file=sys.stderr)
@@ -311,9 +307,6 @@ def get_lib_submodules(
         sys.exit(1)
     submodules = parse_gitmodules(gitmodules)
     lib_submodules = [(n, p) for n, p in submodules if p.startswith("libs/")]
-    if limit is not None:
-        lib_submodules = lib_submodules[:limit]
-        print(f"Limited to first {len(lib_submodules)} submodules.", file=sys.stderr)
     print(f"Found {len(lib_submodules)} libs submodules.", file=sys.stderr)
     return lib_submodules
 
@@ -333,7 +326,12 @@ def ensure_translations_cloned(
     run(["git", "config", "user.name", "CI"], cwd=translations_dir)
 
 
-def get_master_sha(target_repo: str, exists: bool, token: str) -> str:
+def get_master_sha(
+    target_repo: str,
+    exists: bool,
+    token: str,
+    repo_url: Optional[str] = None,
+) -> str:
     """Resolve the current master branch SHA for the target repo; create empty master if missing."""
     if exists:
         run(["git", "fetch", "origin", "master"], cwd=target_repo, check=False)
@@ -346,8 +344,10 @@ def get_master_sha(target_repo: str, exists: bool, token: str) -> str:
         run(["git", "checkout", "--orphan", "master"], cwd=target_repo)
         run(["git", "rm", "-rf", "."], cwd=target_repo, check=False)
         run(["git", "commit", "--allow-empty", "-m", "Empty master branch"], cwd=target_repo, check=False)
-        run(["git", "push", "origin", "master"], cwd=target_repo,
-            env={**os.environ, "GITHUB_TOKEN": token})
+        if repo_url:
+            run(["git", "remote", "set-url", "origin", authed_url(repo_url, token)], cwd=target_repo)
+        push_env = {**os.environ, "GITHUB_TOKEN": token}
+        run(["git", "push", "origin", "master"], cwd=target_repo, env=push_env)
         run(["git", "fetch", "origin", "master"], cwd=target_repo)
         rev_parse = run(["git", "rev-parse", "origin/master"], cwd=target_repo)
     master_sha = rev_parse.stdout.strip()
@@ -514,7 +514,6 @@ def main() -> None:
     parser.add_argument("--translations-repo", default="boost-documentation-translations",
                         help="Repo holding submodule links")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token")
-    parser.add_argument("--limit", type=int, default=None, help="Process only first N submodules (test)")
     args = parser.parse_args()
 
     if not args.token:
@@ -526,7 +525,7 @@ def main() -> None:
     translations_repo = args.translations_repo
     docs_branch = DOCS_BRANCH
 
-    lib_submodules = get_lib_submodules(args.gitmodules_ref, token, args.limit)
+    lib_submodules = get_lib_submodules(args.gitmodules_ref, token)
 
     with tempfile.TemporaryDirectory() as work:
         boost_work = os.path.join(work, "boost")
@@ -545,8 +544,9 @@ def main() -> None:
                 continue
             target_repo, exists = result
             ensure_translations_cloned(org, translations_repo, translations_dir, token)
+            cppdigest_repo_url = f"https://github.com/{org}/{submodule_name}.git"
             try:
-                master_sha = get_master_sha(target_repo, exists, token)
+                master_sha = get_master_sha(target_repo, exists, token, repo_url=cppdigest_repo_url)
             except RuntimeError as e:
                 print(f"  {e}", file=sys.stderr)
                 sys.exit(1)
