@@ -345,9 +345,12 @@ def get_master_sha(
         run(["git", "rm", "-rf", "."], cwd=target_repo, check=False)
         run(["git", "commit", "--allow-empty", "-m", "Empty master branch"], cwd=target_repo, check=False)
         if repo_url:
-            run(["git", "remote", "set-url", "origin", authed_url(repo_url, token)], cwd=target_repo)
-        push_env = {**os.environ, "GITHUB_TOKEN": token}
-        run(["git", "push", "origin", "master"], cwd=target_repo, env=push_env)
+            push_url = authed_url(repo_url, token)
+            run(["git", "push", push_url, "master"], cwd=target_repo)
+            run(["git", "remote", "set-url", "origin", push_url], cwd=target_repo)
+        else:
+            run(["git", "push", "origin", "master"], cwd=target_repo,
+                env={**os.environ, "GITHUB_TOKEN": token})
         run(["git", "fetch", "origin", "master"], cwd=target_repo)
         rev_parse = run(["git", "rev-parse", "origin/master"], cwd=target_repo)
     master_sha = rev_parse.stdout.strip()
