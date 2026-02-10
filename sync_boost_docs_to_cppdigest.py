@@ -19,6 +19,7 @@ import sys
 import tempfile
 from typing import List, Optional, Set, Tuple
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 USER_AGENT = "BoostDocsSync/1.0"
@@ -129,18 +130,6 @@ def run(
     )
 
 
-def api_get(path: str, token: str) -> dict:
-    """GET GitHub API path; return JSON. Raises on error."""
-    url = f"{GITHUB_API_BASE}{path}"
-    req = Request(url, headers={
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": USER_AGENT,
-    })
-    with urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode("utf-8"))
-
-
 def api_get_status(path: str, token: str) -> int:
     """GET GitHub API path; return HTTP status code."""
     url = f"{GITHUB_API_BASE}{path}"
@@ -164,10 +153,10 @@ def repo_exists(org: str, repo: str, token: str) -> bool:
 def create_repo(org: str, repo: str, token: str, private: bool = False) -> None:
     """Create repository in org. Fails if already exists."""
     url = f"{GITHUB_API_BASE}/orgs/{org}/repos"
-    data = json.dumps({"name": repo, "private": private}).encode("utf-8")
+    body = json.dumps({"name": repo, "private": private}).encode("utf-8")
     req = Request(
         url,
-        data=data,
+        data=body,
         method="POST",
         headers={
             "Authorization": f"Bearer {token}",
@@ -176,8 +165,12 @@ def create_repo(org: str, repo: str, token: str, private: bool = False) -> None:
             "Content-Type": "application/json",
         },
     )
-    with urlopen(req, timeout=30) as _:
-        pass
+    try:
+        with urlopen(req, timeout=30) as _:
+            pass
+    except HTTPError as e:
+        resp_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        raise RuntimeError(f"Create repo failed: {e.code} {resp_body}") from e
 
 
 def doc_paths_to_keep(
@@ -286,7 +279,6 @@ def authed_url(repo_url: str, token: Optional[str]) -> str:
     """Return repo_url with token embedded for HTTPS GitHub URLs."""
     if not token or "github.com" not in repo_url:
         return repo_url
-    from urllib.parse import urlparse
     parsed = urlparse(repo_url)
     return f"{parsed.scheme}://x-access-token:{token}@{parsed.netloc}{parsed.path}"
 
@@ -385,8 +377,8 @@ def main() -> None:
                 try:
                     clone_repo_keep_git(cppdigest_repo_url, docs_branch, dest_repo, token=token)
                 except subprocess.CalledProcessError:
-                    run(["git", "clone", "--depth", "1", authed_url(cppdigest_repo_url, token), dest_repo])
-                    run(["git", "checkout", "-b", docs_branch], cwd=dest_repo)
+                    run(["git", "clone", "--depth", "1", "--branch", docs_branch,
+                         authed_url(cppdigest_repo_url, token), dest_repo])
 
                 for item in os.listdir(dest_repo):
                     if item == ".git":
@@ -445,8 +437,6 @@ def main() -> None:
             rev_parse = run(
                 ["git", "rev-parse", "origin/master"],
                 cwd=target_repo,
-                capture_output=True,
-                text=True,
                 check=False,
             )
             if rev_parse.returncode != 0 and exists:
@@ -460,10 +450,11 @@ def main() -> None:
                 rev_parse = run(
                     ["git", "rev-parse", "origin/master"],
                     cwd=target_repo,
-                    capture_output=True,
-                    text=True,
                 )
             master_sha = rev_parse.stdout.strip()
+            if not master_sha:
+                print(f"  Failed to get master SHA for {submodule_name}", file=sys.stderr)
+                sys.exit(1)
 
             libs_path = os.path.join(translations_dir, "libs", submodule_name)
             if os.path.isdir(libs_path) and os.path.isdir(os.path.join(libs_path, ".git")):
