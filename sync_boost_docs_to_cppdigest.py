@@ -406,6 +406,8 @@ def main() -> None:
                     else:
                         shutil.copy2(src, dst)
 
+                run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=dest_repo)
+                run(["git", "config", "user.name", "CI"], cwd=dest_repo)
                 run(["git", "add", "-A"], cwd=dest_repo)
                 run(["git", "status", "--short"], cwd=dest_repo)
                 run(["git", "commit", "-m", f"Update the original documentation of {libs_ref}"], cwd=dest_repo, check=False)
@@ -416,6 +418,8 @@ def main() -> None:
                 create_repo(org, submodule_name, token)
                 target_repo = submodule_clone
                 run(["git", "init"], cwd=submodule_clone)
+                run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=submodule_clone)
+                run(["git", "config", "user.name", "CI"], cwd=submodule_clone)
                 run(["git", "remote", "remove", "origin"], cwd=submodule_clone, check=False)
                 run(["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)], cwd=submodule_clone)
                 run(["git", "add", "-A"], cwd=submodule_clone)
