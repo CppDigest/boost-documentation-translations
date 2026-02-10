@@ -22,6 +22,12 @@ from typing import List, Optional, Set, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+# Allow importing from data/ when run from repo root (e.g. CI)
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_data_dir = os.path.join(_script_dir, "data")
+if os.path.isdir(_data_dir):
+    sys.path.insert(0, _data_dir)
+
 # Reuse from collect_boost_libraries_extensions
 from collect_boost_libraries_extensions import (
     GITMODULES_URL_TEMPLATE,
@@ -31,7 +37,6 @@ from collect_boost_libraries_extensions import (
     parse_gitmodules,
 )
 
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com"
 USER_AGENT = "BoostDocsSync/1.0"
 BOOST_ORG = "boostorg"
 
@@ -343,7 +348,7 @@ def main() -> None:
                 target_repo = submodule_clone
                 run(["git", "init"], cwd=submodule_clone)
                 run(["git", "remote", "remove", "origin"], cwd=submodule_clone, check=False)
-                run(["git", "remote", "add", "origin", cppdigest_repo_url], cwd=submodule_clone)
+                run(["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)], cwd=submodule_clone)
                 run(["git", "add", "-A"], cwd=submodule_clone)
                 run(["git", "commit", "-m", f"Create the original documentation of {libs_ref}"], cwd=submodule_clone)
                 run(["git", "branch", "-M", docs_branch], cwd=submodule_clone)

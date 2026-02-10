@@ -1,2 +1,6 @@
 # Data files
 data/
+
+.cursor/
+
+trigger_sync_workflow.py

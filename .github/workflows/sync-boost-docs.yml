@@ -2,11 +2,11 @@
 #
 # Trigger: repository_dispatch with event_type "sync-boost-docs".
 # Example: POST /repos/{owner}/{repo}/dispatches
-#   Body: {"event_type": "sync-boost-docs", "client_payload": {"version": "boost-1.90.0", "gitmodules_ref": "master"}}
+#   Body: {"event_type": "sync-boost-docs", "client_payload": {"version": "boost-1.90.0"}}
 #
 # client_payload (optional):
-#   version: ref for cloning libs (e.g. boost-1.90.0). Default: develop.
-#   gitmodules_ref: ref for .gitmodules from boostorg/boost. Default: master.
+#   version: Boost release ref (e.g. boost-1.90.0). If set: used for both boost repo (.gitmodules)
+#     and individual library repos. If omitted: boost repo uses master, library repos use develop.
 #   docs_branch: branch name for docs in CppDigest repos. Default: main.
 #
 # Required secret: SYNC_TOKEN — PAT with repo (and org repo create) permissions for CppDigest.
@@ -40,7 +40,8 @@ jobs:
       - name: Run sync script
         env:
           GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
-          GITMODULES_REF: ${{ github.event.client_payload.gitmodules_ref || 'master' }}
+          # If version given (e.g. boost-1.90.0): use for both boost repo and lib repos. Else: master / develop.
+          GITMODULES_REF: ${{ github.event.client_payload.version || 'master' }}
           LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
           DOCS_BRANCH: ${{ github.event.client_payload.docs_branch || 'main' }}
         run: |
