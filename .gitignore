@@ -4,4 +4,5 @@ data/
 .cursor/
 
 trigger_sync_workflow.py
+delete_cppdigest_lib_repos.py
 push_project.py

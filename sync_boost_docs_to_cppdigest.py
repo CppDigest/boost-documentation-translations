@@ -296,7 +296,11 @@ def clone_repo_keep_git(
     run(["git", "clone", "--depth", "1", "--branch", branch, url, dest])
 
 
-def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]:
+def get_lib_submodules(
+    gitmodules_ref: str,
+    token: str,
+    limit: Optional[int] = None,
+) -> List[Tuple[str, str]]:
     """Fetch .gitmodules from boostorg/boost and return libs/ submodules (name, path)."""
     url = GITMODULES_URL_TEMPLATE.format(ref=gitmodules_ref)
     print(f"Fetching .gitmodules from boostorg/boost at {gitmodules_ref}...", file=sys.stderr)
@@ -307,6 +311,9 @@ def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]
         sys.exit(1)
     submodules = parse_gitmodules(gitmodules)
     lib_submodules = [(n, p) for n, p in submodules if p.startswith("libs/")]
+    if limit is not None:
+        lib_submodules = lib_submodules[:limit]
+        print(f"Limited to first {len(lib_submodules)} submodules.", file=sys.stderr)
     print(f"Found {len(lib_submodules)} libs submodules.", file=sys.stderr)
     return lib_submodules
 
@@ -346,21 +353,17 @@ def get_master_sha(
         run(["git", "commit", "--allow-empty", "-m", "Empty master branch"], cwd=target_repo, check=False)
         if repo_url:
             push_url = authed_url(repo_url, token)
-            push_result = run(["git", "push", push_url, "master"], cwd=target_repo, check=False)
+            push_result = run(
+                ["git", "push", "--force", push_url, "master"],
+                cwd=target_repo,
+                check=False,
+            )
             if push_result.returncode != 0:
                 if push_result.stderr:
                     print(push_result.stderr, file=sys.stderr)
-                push_result = run(
-                    ["git", "push", "--force", push_url, "master"],
-                    cwd=target_repo,
-                    check=False,
+                raise RuntimeError(
+                    f"Failed to push master to {repo_url}: exit {push_result.returncode}"
                 )
-                if push_result.returncode != 0:
-                    if push_result.stderr:
-                        print(push_result.stderr, file=sys.stderr)
-                    raise RuntimeError(
-                        f"Failed to push master to {repo_url}: exit {push_result.returncode}"
-                    )
             rev_parse = run(["git", "rev-parse", "HEAD"], cwd=target_repo)
         else:
             run(["git", "push", "origin", "master"], cwd=target_repo,
@@ -416,16 +419,18 @@ def create_new_repo_and_push(
     libs_ref: str,
     token: str,
 ) -> None:
-    """Create CppDigest repo, push pruned docs to docs_branch, then create and push empty master."""
+    """Create CppDigest repo, push pruned docs to docs_branch, then create and push empty master.
+    Follows GitHub's 'push an existing repository' pattern: init, add, commit, branch -M, remote add, push -u.
+    """
     create_repo(org, submodule_name, token)
     run(["git", "init"], cwd=submodule_clone)
     run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=submodule_clone)
     run(["git", "config", "user.name", "CI"], cwd=submodule_clone)
-    run(["git", "remote", "remove", "origin"], cwd=submodule_clone, check=False)
-    run(["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)], cwd=submodule_clone)
     run(["git", "add", "-A"], cwd=submodule_clone)
     run(["git", "commit", "-m", f"Create the original documentation of {libs_ref}"], cwd=submodule_clone)
     run(["git", "branch", "-M", docs_branch], cwd=submodule_clone)
+    run(["git", "remote", "remove", "origin"], cwd=submodule_clone, check=False)
+    run(["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)], cwd=submodule_clone)
     run(["git", "push", "-u", "origin", docs_branch], cwd=submodule_clone,
         env={**os.environ, "GITHUB_TOKEN": token})
     run(["git", "checkout", "--orphan", "master"], cwd=submodule_clone)
@@ -531,6 +536,8 @@ def main() -> None:
     parser.add_argument("--translations-repo", default="boost-documentation-translations",
                         help="Repo holding submodule links")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token")
+    parser.add_argument("--limit", type=int, default=2,
+                        help="Process only first N submodules (default: 2). Use 0 for all.")
     args = parser.parse_args()
 
     if not args.token:
@@ -542,7 +549,8 @@ def main() -> None:
     translations_repo = args.translations_repo
     docs_branch = DOCS_BRANCH
 
-    lib_submodules = get_lib_submodules(args.gitmodules_ref, token)
+    limit = None if args.limit == 0 else args.limit
+    lib_submodules = get_lib_submodules(args.gitmodules_ref, token, limit=limit)
 
     with tempfile.TemporaryDirectory() as work:
         boost_work = os.path.join(work, "boost")
