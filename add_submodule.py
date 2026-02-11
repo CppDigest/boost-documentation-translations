@@ -632,6 +632,11 @@ def finalize_translations_repo(
             ],
             cwd=translations_dir,
         )
+    else:
+        run(
+            ["git", "checkout", "-b", TRANSLATIONS_MASTER_BRANCH],
+            cwd=translations_dir,
+        )
     for submodule_name, sha in updates_master:
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
@@ -645,9 +650,14 @@ def finalize_translations_repo(
     if rev_local.returncode == 0:
         run(
             [
-                "git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH,
+                "git", "checkout", "-B", TRANSLATIONS_LOCAL_BRANCH,
                 f"origin/{TRANSLATIONS_LOCAL_BRANCH}",
             ],
+            cwd=translations_dir,
+        )
+    else:
+        run(
+            ["git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH],
             cwd=translations_dir,
         )
     # Super's local branch: record each submodule at sub's local branch (local_sha).
