@@ -147,7 +147,6 @@ def api_get_status(path: str, token: str) -> int:
         with urlopen(req, timeout=30) as r:
             return r.status
     except HTTPError as e:
-        print(f"api_get_status HTTPError: {e.code} {e}", file=sys.stderr)
         return e.code
 
 
@@ -220,8 +219,8 @@ def paths_under(base: str, paths: Set[str]) -> Set[str]:
 
 def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
     """
-    Remove everything in clone_dir except .git and directories/files under paths_to_keep.
-    paths_to_keep is e.g. {"doc", "minmax/doc", "string/doc"}.
+    Remove all folders except doc-related paths (and .git at root). Keep doc folders,
+    and keep all root path files. paths_to_keep is e.g. {"doc", "minmax/doc", "string/doc"}.
     """
     def prune_dir(base: str, keep_paths: Set[str]) -> None:
         current_segments = first_segments(keep_paths) if keep_paths else set()
@@ -238,12 +237,12 @@ def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
             if rel.startswith("/"):
                 rel = rel[1:]
             if os.path.isfile(path):
-                # Check if file is under any keep path
+                # Keep files under a keep path, or any file at repo root
                 under = any(
                     rel == p or rel.startswith(p + "/")
                     for p in paths_to_keep
                 )
-                if not under:
+                if not under and base != "":
                     os.remove(path)
             else:
                 if name not in current_segments and rel not in paths_to_keep:
@@ -255,16 +254,13 @@ def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
 
     prune_dir("", paths_to_keep)
 
-    # Remove any top-level item that is not .git and not in first segments of paths_to_keep
+    # Remove top-level dirs not in paths_to_keep (including .git, .github); keep all root path files
     top_keep = first_segments(paths_to_keep)
     for name in list(os.listdir(clone_dir)):
-        if name == ".git":
-            continue
         path = os.path.join(clone_dir, name)
-        if name not in top_keep and os.path.isdir(path):
+        if os.path.isdir(path) and name not in top_keep:
             shutil.rmtree(path, ignore_errors=True)
-        elif name not in top_keep and os.path.isfile(path):
-            os.remove(path)
+        # Root path files are always kept
 
 
 def clone_repo(
