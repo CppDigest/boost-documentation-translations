@@ -1,0 +1,8 @@
+[submodule "libs/algorithm"]
+	path = libs/algorithm
+	url = https://github.com/CppDigest/algorithm.git
+	branch = master
+[submodule "libs/system"]
+	path = libs/system
+	url = https://github.com/CppDigest/system.git
+	branch = master
