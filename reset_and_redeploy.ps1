@@ -28,7 +28,7 @@ Invoke-Step "4/5" "Triggering add-submodule workflow..." {
 }
 
 Invoke-Step "5/5" "Pulling (allow unrelated histories)..." {
-    git pull --allow-unrelated-histories
+    git pull origin master --allow-unrelated-histories
 }
 
 Write-Host "Done."

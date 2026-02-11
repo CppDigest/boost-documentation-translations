@@ -645,7 +645,7 @@ def finalize_translations_repo(
     if rev_local.returncode == 0:
         run(
             [
-                "git", "checkout", "-B", TRANSLATIONS_LOCAL_BRANCH,
+                "git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH,
                 f"origin/{TRANSLATIONS_LOCAL_BRANCH}",
             ],
             cwd=translations_dir,
