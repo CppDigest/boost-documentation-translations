@@ -589,11 +589,18 @@ def _commit_and_push_translations_branch(
         cwd=translations_dir,
         check=False,
     )
-    run(
+    push_result = run(
         ["git", "push", "origin", branch],
         cwd=translations_dir,
         env={**os.environ, "GITHUB_TOKEN": token},
+        check=False,
     )
+    if push_result.returncode != 0:
+        if push_result.stderr:
+            print(push_result.stderr, file=sys.stderr)
+        raise RuntimeError(
+            f"Failed to push {branch}: exit {push_result.returncode}"
+        )
 
 
 def finalize_translations_repo(
