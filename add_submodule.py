@@ -345,7 +345,7 @@ def ensure_translations_cloned(
     if os.path.isdir(os.path.join(translations_dir, ".git")):
         return
     trans_url = f"https://github.com/{org}/{translations_repo}.git"
-    clone_repo_keep_git(trans_url, "main", translations_dir, token=token)
+    clone_repo_keep_git(trans_url, TRANSLATIONS_MASTER_BRANCH, translations_dir, token=token)
     run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
     run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=translations_dir)
     run(["git", "config", "user.name", "CI"], cwd=translations_dir)
@@ -597,12 +597,7 @@ def finalize_translations_repo(
         cwd=translations_dir,
         check=False,
     )
-    if rev_master.returncode != 0:
-        run(
-            ["git", "checkout", "-b", TRANSLATIONS_MASTER_BRANCH, "origin/main"],
-            cwd=translations_dir,
-        )
-    else:
+    if rev_master.returncode == 0:
         run(
             [
                 "git", "checkout", "-B", TRANSLATIONS_MASTER_BRANCH,
@@ -620,15 +615,7 @@ def finalize_translations_repo(
         cwd=translations_dir,
         check=False,
     )
-    if rev_local.returncode != 0:
-        run(
-            [
-                "git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH,
-                TRANSLATIONS_MASTER_BRANCH,
-            ],
-            cwd=translations_dir,
-        )
-    else:
+    if rev_local.returncode == 0:
         run(
             [
                 "git", "checkout", "-B", TRANSLATIONS_LOCAL_BRANCH,
