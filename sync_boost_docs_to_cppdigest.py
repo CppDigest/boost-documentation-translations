@@ -197,16 +197,12 @@ def doc_paths_to_keep(
 def parse_submodules_list(s: str) -> List[str]:
     """
     Parse a list-like string into submodule names.
-    E.g. '[algorithm]' -> ['algorithm'], '[algorithm, system]' -> ['algorithm', 'system'].
+    E.g. 'algorithm' -> ['algorithm'], 'algorithm|system' -> ['algorithm', 'system'].
     """
     if not s or not s.strip():
         return []
     s = s.strip()
-    if s.startswith("["):
-        s = s[1:]
-    if s.endswith("]"):
-        s = s[:-1]
-    return [name.strip() for name in s.split(" ") if name.strip()]
+    return [name.strip() for name in s.split("|") if name.strip()]
 
 
 def first_segments(paths: Set[str]) -> Set[str]:
