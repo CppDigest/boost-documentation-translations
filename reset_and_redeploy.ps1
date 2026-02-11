@@ -24,7 +24,7 @@ Invoke-Step "3/5" "Pushing project..." {
 }
 
 Invoke-Step "4/5" "Triggering add-submodule workflow..." {
-    python .\trigger_add_submodule.py --token $TOKEN --version boost-1.90.0 --submodules algorithm system --lang-code zh_Hans
+    python .\trigger_add_submodule.py --token $TOKEN --version boost-1.89.0 --submodules algorithm system --lang-code zh_Hans
 }
 
 Write-Host "[5/5] Waiting 120s for workflow to finish..."
