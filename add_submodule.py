@@ -485,8 +485,8 @@ def sync_existing_repo(
             shutil.copytree(src, dst)
         else:
             shutil.copy2(src, dst)
-    run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=dest_repo)
-    run(["git", "config", "user.name", "CI"], cwd=dest_repo)
+    run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=dest_repo)
+    run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=dest_repo)
     run(["git", "add", "-A"], cwd=dest_repo)
     run(["git", "status", "--short"], cwd=dest_repo)
     run(
@@ -515,8 +515,8 @@ def create_new_repo_and_push(
     """Create CppDigest repo, push docs to master, create local branch and push."""
     create_repo(org, submodule_name, token)
     run(["git", "init"], cwd=submodule_clone)
-    run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=submodule_clone)
-    run(["git", "config", "user.name", "CI"], cwd=submodule_clone)
+    run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=submodule_clone)
+    run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=submodule_clone)
     run(["git", "add", "-A"], cwd=submodule_clone)
     run(["git", "commit", "-m", f"Create the original documentation of {libs_ref}"], cwd=submodule_clone)
     run(["git", "branch", "-M", MASTER_BRANCH], cwd=submodule_clone)
