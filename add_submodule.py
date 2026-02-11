@@ -561,6 +561,11 @@ def update_translations_submodule(
             cwd=translations_dir,
         )
         run(
+            ["git", "config", "-f", ".gitmodules", f"submodule.{submodule_path}.url", submodule_url],
+            cwd=translations_dir,
+        )
+        run(["git", "add", ".gitmodules"], cwd=translations_dir)
+        run(
             ["git", "-C", submodule_path, "fetch", "origin"],
             cwd=translations_dir,
             check=False,
@@ -583,7 +588,7 @@ def _commit_and_push_translations_branch(
         check=False,
     )
     run(
-        ["git", "push", "origin", branch],
+        ["git", "push", "-u", "origin", branch],
         cwd=translations_dir,
         env={**os.environ, "GITHUB_TOKEN": token},
     )
@@ -630,6 +635,11 @@ def finalize_translations_repo(
                 "git", "checkout", "-B", TRANSLATIONS_LOCAL_BRANCH,
                 f"origin/{TRANSLATIONS_LOCAL_BRANCH}",
             ],
+            cwd=translations_dir,
+        )
+    else:
+        run(
+            ["git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH],
             cwd=translations_dir,
         )
     for submodule_name, sha in updates_local:
