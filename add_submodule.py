@@ -347,12 +347,13 @@ def ensure_translations_cloned(
     trans_url = f"https://github.com/{org}/{translations_repo}.git"
     clone_repo_keep_git(trans_url, TRANSLATIONS_MASTER_BRANCH, translations_dir, token=token)
     run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
-    run(["git", "config", "user.email", "ci@cppdigest.local"], cwd=translations_dir)
-    run(["git", "config", "user.name", "CI"], cwd=translations_dir)
+    run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=translations_dir)
+    run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=translations_dir)
 
 
 def get_master_and_local_shas(target_repo: str, token: str) -> Tuple[str, str]:
-    """Resolve master and local branch SHAs for the target repo. Returns (master_sha, local_sha)."""
+    """Resolve master and local branch SHAs for the target repo. Returns (master_sha, local_sha).
+    target_repo is the path to a clone of a CppDigest library repo, e.g. /tmp/xyz/cppdigest/algorithm."""
     run(["git", "fetch", "origin", MASTER_BRANCH], cwd=target_repo, check=False)
     rev_master = run(
         ["git", "rev-parse", f"origin/{MASTER_BRANCH}"],
@@ -524,40 +525,48 @@ def update_translations_submodule(
 ) -> None:
     """Point libs/<submodule_name> at the given SHA; add submodule if needed."""
     libs_path = os.path.join(translations_dir, "libs", submodule_name)
+    submodule_path = f"libs/{submodule_name}"
+
+    def init_fetch_checkout_add() -> None:
+        run(
+            ["git", "submodule", "update", "--init", submodule_path],
+            cwd=translations_dir,
+            check=False,
+        )
+        run(
+            ["git", "-C", submodule_path, "fetch", "origin"],
+            cwd=translations_dir,
+            check=False,
+        )
+        run(["git", "-C", submodule_path, "checkout", sha], cwd=translations_dir)
+        run(["git", "add", submodule_path], cwd=translations_dir)
+
     if os.path.isdir(libs_path) and os.path.isdir(os.path.join(libs_path, ".git")):
-        run(
-            ["git", "submodule", "update", "--init", f"libs/{submodule_name}"],
-            cwd=translations_dir,
-            check=False,
-        )
-        run(
-            ["git", "-C", f"libs/{submodule_name}", "fetch", "origin"],
-            cwd=translations_dir,
-            check=False,
-        )
-        run(["git", "-C", f"libs/{submodule_name}", "checkout", sha], cwd=translations_dir)
-        run(["git", "add", "libs/" + submodule_name], cwd=translations_dir)
+        init_fetch_checkout_add()
+    elif os.path.isdir(libs_path):
+        # Path exists but not inited (submodule entry in index); init instead of add.
+        init_fetch_checkout_add()
     else:
         submodule_url = f"https://github.com/{org}/{submodule_name}.git"
         run(
             [
                 "git", "submodule", "add", "-b", MASTER_BRANCH,
                 authed_url(submodule_url, token),
-                f"libs/{submodule_name}",
+                submodule_path,
             ],
             cwd=translations_dir,
         )
         run(
-            ["git", "config", f"submodule.libs/{submodule_name}.url", submodule_url],
+            ["git", "config", f"submodule.{submodule_path}.url", submodule_url],
             cwd=translations_dir,
         )
         run(
-            ["git", "-C", f"libs/{submodule_name}", "fetch", "origin"],
+            ["git", "-C", submodule_path, "fetch", "origin"],
             cwd=translations_dir,
             check=False,
         )
-        run(["git", "-C", f"libs/{submodule_name}", "checkout", sha], cwd=translations_dir)
-        run(["git", "add", "libs/" + submodule_name], cwd=translations_dir)
+        run(["git", "-C", submodule_path, "checkout", sha], cwd=translations_dir)
+        run(["git", "add", submodule_path], cwd=translations_dir)
 
 
 def _commit_and_push_translations_branch(
@@ -661,7 +670,6 @@ def process_one_submodule(
         return None
 
     run(["git", "init"], cwd=submodule_clone)
-    run(["git", "remote", "add", "origin", boost_repo_url], cwd=submodule_clone)
     prune_to_doc_only(submodule_clone, paths_to_keep)
 
     cppdigest_repo_url = f"https://github.com/{org}/{submodule_name}.git"
