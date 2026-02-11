@@ -579,6 +579,7 @@ def _commit_and_push_translations_branch(
     branch: str,
     libs_ref: str,
     token: str,
+    force_with_lease: bool = False,
 ) -> None:
     """Commit submodule updates and push the current branch."""
     run(["git", "status", "--short"], cwd=translations_dir)
@@ -587,8 +588,11 @@ def _commit_and_push_translations_branch(
         cwd=translations_dir,
         check=False,
     )
+    push_cmd = ["git", "push", "origin", branch]
+    if force_with_lease:
+        push_cmd.insert(-1, "--force-with-lease")
     run(
-        ["git", "push", "-u", "origin", branch],
+        push_cmd,
         cwd=translations_dir,
         env={**os.environ, "GITHUB_TOKEN": token},
     )
@@ -622,7 +626,8 @@ def finalize_translations_repo(
     for submodule_name, sha in updates_master:
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
-        translations_dir, TRANSLATIONS_MASTER_BRANCH, libs_ref, token
+        translations_dir, TRANSLATIONS_MASTER_BRANCH, libs_ref, token,
+        force_with_lease=False,
     )
     rev_local = run(
         ["git", "rev-parse", f"origin/{TRANSLATIONS_LOCAL_BRANCH}"],
@@ -637,15 +642,11 @@ def finalize_translations_repo(
             ],
             cwd=translations_dir,
         )
-    else:
-        run(
-            ["git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH],
-            cwd=translations_dir,
-        )
     for submodule_name, sha in updates_local:
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
-        translations_dir, TRANSLATIONS_LOCAL_BRANCH, libs_ref, token
+        translations_dir, TRANSLATIONS_LOCAL_BRANCH, libs_ref, token,
+        force_with_lease=True,
     )
 
 
