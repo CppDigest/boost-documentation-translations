@@ -41,8 +41,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
           GITMODULES_REF: ${{ github.event.client_payload.version || 'master' }}
           LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
-          SUBMODULES: ${{ join(' ', github.event.client_payload.submodules || fromJSON('[]')) }}
+          SUBMODULES_JSON: ${{ toJSON(github.event.client_payload.submodules || fromJSON('[]')) }}
         run: |
+          SUBMODULES=$(python3 -c "import os,json; print(' '.join(json.loads(os.environ.get('SUBMODULES_JSON','[]'))))")
           python sync_boost_docs_to_cppdigest.py \
             --gitmodules-ref "$GITMODULES_REF" \
             --libs-ref "$LIBS_REF" \
