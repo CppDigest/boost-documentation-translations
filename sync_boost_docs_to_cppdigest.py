@@ -206,7 +206,7 @@ def parse_submodules_list(s: str) -> List[str]:
         s = s[1:]
     if s.endswith("]"):
         s = s[:-1]
-    return [name.strip() for name in s.split(",") if name.strip()]
+    return [name.strip() for name in s.split(" ") if name.strip()]
 
 
 def first_segments(paths: Set[str]) -> Set[str]:
