@@ -414,7 +414,7 @@ def update_local_rebase_onto_master(
     token: str,
     repo_url: str,
 ) -> None:
-    """Update local branch by rebasing onto origin/master, then push (force-with-lease)."""
+    """Update local branch by rebasing onto origin/master, then push (--force)."""
     run(["git", "fetch", "origin", MASTER_BRANCH], cwd=repo_dir)
     run(["git", "fetch", "origin", LOCAL_BRANCH], cwd=repo_dir, check=False)
     rev_local = run(
@@ -435,7 +435,7 @@ def update_local_rebase_onto_master(
         run(["git", "rebase", f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
     push_url = authed_url(repo_url, token)
     run(
-        ["git", "push", "--force-with-lease", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
+        ["git", "push", "--force", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
         cwd=repo_dir,
         env={**os.environ, "GITHUB_TOKEN": token},
     )
@@ -579,7 +579,7 @@ def _commit_and_push_translations_branch(
     branch: str,
     libs_ref: str,
     token: str,
-    force_with_lease: bool = False,
+    force_push: bool = False,
 ) -> None:
     """Commit submodule updates and push the current branch."""
     run(["git", "status", "--short"], cwd=translations_dir)
@@ -589,8 +589,8 @@ def _commit_and_push_translations_branch(
         check=False,
     )
     push_cmd = ["git", "push", "origin", branch]
-    if force_with_lease:
-        push_cmd.insert(-1, "--force-with-lease")
+    if force_push:
+        push_cmd.insert(2, "--force")  # after "push", before remote
     run(
         push_cmd,
         cwd=translations_dir,
@@ -627,7 +627,7 @@ def finalize_translations_repo(
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
         translations_dir, TRANSLATIONS_MASTER_BRANCH, libs_ref, token,
-        force_with_lease=False,
+        force_push=False,
     )
     rev_local = run(
         ["git", "rev-parse", f"origin/{TRANSLATIONS_LOCAL_BRANCH}"],
@@ -646,7 +646,7 @@ def finalize_translations_repo(
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
         translations_dir, TRANSLATIONS_LOCAL_BRANCH, libs_ref, token,
-        force_with_lease=True,
+        force_push=True,
     )
 
 
