@@ -1,8 +1,10 @@
 # Data files
 data/
 
+# Cursor files
 .cursor/
 
-trigger_sync_workflow.py
+# Python files
+trigger_add_submodule.py
 delete_cppdigest_lib_repos.py
 push_project.py
