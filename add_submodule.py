@@ -346,6 +346,8 @@ def ensure_translations_cloned(
         return
     trans_url = f"https://github.com/{org}/{translations_repo}.git"
     clone_repo_keep_git(trans_url, TRANSLATIONS_MASTER_BRANCH, translations_dir, token=token)
+    # Unshallow so we can push other branches (local) that share history with master.
+    run(["git", "fetch", "--unshallow", "origin"], cwd=translations_dir, check=False)
     run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
     run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=translations_dir)
     run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=translations_dir)
@@ -579,7 +581,6 @@ def _commit_and_push_translations_branch(
     branch: str,
     libs_ref: str,
     token: str,
-    force_push: bool = False,
 ) -> None:
     """Commit submodule updates and push the current branch."""
     run(["git", "status", "--short"], cwd=translations_dir)
@@ -588,11 +589,8 @@ def _commit_and_push_translations_branch(
         cwd=translations_dir,
         check=False,
     )
-    push_cmd = ["git", "push", "origin", branch]
-    if force_push:
-        push_cmd.insert(2, "--force")  # after "push", before remote
     run(
-        push_cmd,
+        ["git", "push", "origin", branch],
         cwd=translations_dir,
         env={**os.environ, "GITHUB_TOKEN": token},
     )
@@ -627,7 +625,6 @@ def finalize_translations_repo(
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
         translations_dir, TRANSLATIONS_MASTER_BRANCH, libs_ref, token,
-        force_push=False,
     )
     rev_local = run(
         ["git", "rev-parse", f"origin/{TRANSLATIONS_LOCAL_BRANCH}"],
@@ -646,7 +643,6 @@ def finalize_translations_repo(
         update_translations_submodule(translations_dir, org, submodule_name, sha, token)
     _commit_and_push_translations_branch(
         translations_dir, TRANSLATIONS_LOCAL_BRANCH, libs_ref, token,
-        force_push=True,
     )
 
 
