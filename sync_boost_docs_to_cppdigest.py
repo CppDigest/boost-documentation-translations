@@ -2,7 +2,9 @@
 """
 Sync Boost library documentation from boostorg/boost to CppDigest organization.
 
-Triggered by CI (repository_dispatch). For each libs/ submodule:
+Triggered by CI (repository_dispatch). Submodule list: either pass --submodules, or
+fetch .gitmodules from https://github.com/boostorg/boost (ref = specified version or master).
+For each libs/ submodule:
 1. Clone boostorg repo at given ref; keep only doc folders per meta/libraries.json.
 2. Update or create CppDigest/<submodule>: push doc content to master; then ensure
    local branch exists and, if there is no open PR from boost-<sub>-<lang>-translation-<version>,
@@ -203,35 +205,18 @@ def first_segments(paths: Set[str]) -> Set[str]:
     return segs
 
 
-def paths_under(base: str, paths: Set[str]) -> Set[str]:
-    """Return relative paths under base. E.g. base='minmax', paths={'doc','minmax/doc'} -> {'doc'}."""
-    prefix = base + "/" if base else ""
-    out: Set[str] = set()
-    for p in paths:
-        if p == base:
-            out.add("")
-            continue
-        if p.startswith(prefix):
-            rest = p[len(prefix):]
-            out.add(rest.split("/")[0])
-    return out
-
-
 def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
     """
-    Remove all folders except doc-related paths (and .git at root). Keep doc folders,
-    and keep all root path files. paths_to_keep is e.g. {"doc", "minmax/doc", "string/doc"}.
+    Remove all folders except doc-related paths. Keep doc folders and all root path files.
+    Removes .git and .github too; caller runs git init again before add/commit/push.
+    paths_to_keep is e.g. {"doc", "minmax/doc", "string/doc"}.
     """
     def prune_dir(base: str, keep_paths: Set[str]) -> None:
         current_segments = first_segments(keep_paths) if keep_paths else set()
-        if not base:
-            current_segments.discard("")
         full_base = os.path.join(clone_dir, base) if base else clone_dir
         if not os.path.isdir(full_base):
             return
         for name in os.listdir(full_base):
-            if name == ".git" and not base:
-                continue
             path = os.path.join(full_base, name)
             rel = f"{base}/{name}" if base else name
             if rel.startswith("/"):
@@ -253,14 +238,6 @@ def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
                     prune_dir(rel, sub_paths)
 
     prune_dir("", paths_to_keep)
-
-    # Remove top-level dirs not in paths_to_keep (including .git, .github); keep all root path files
-    top_keep = first_segments(paths_to_keep)
-    for name in list(os.listdir(clone_dir)):
-        path = os.path.join(clone_dir, name)
-        if os.path.isdir(path) and name not in top_keep:
-            shutil.rmtree(path, ignore_errors=True)
-        # Root path files are always kept
 
 
 def clone_repo(
@@ -298,11 +275,7 @@ def clone_repo_keep_git(
     run(["git", "clone", "--depth", "1", "--branch", branch, url, dest])
 
 
-def get_lib_submodules(
-    gitmodules_ref: str,
-    token: str,
-    limit: Optional[int] = None,
-) -> List[Tuple[str, str]]:
+def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]:
     """Fetch .gitmodules from boostorg/boost and return libs/ submodules (name, path)."""
     url = GITMODULES_URL_TEMPLATE.format(ref=gitmodules_ref)
     print(f"Fetching .gitmodules from boostorg/boost at {gitmodules_ref}...", file=sys.stderr)
@@ -313,9 +286,6 @@ def get_lib_submodules(
         sys.exit(1)
     submodules = parse_gitmodules(gitmodules)
     lib_submodules = [(n, p) for n, p in submodules if p.startswith("libs/")]
-    if limit is not None:
-        lib_submodules = lib_submodules[:limit]
-        print(f"Limited to first {len(lib_submodules)} submodules.", file=sys.stderr)
     print(f"Found {len(lib_submodules)} libs submodules.", file=sys.stderr)
     return lib_submodules
 
@@ -590,8 +560,8 @@ def main() -> None:
     parser.add_argument("--translations-repo", default="boost-documentation-translations",
                         help="Repo holding submodule links")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token")
-    parser.add_argument("--limit", type=int, default=1,
-                        help="Process only first N submodules (default: 1). Use 0 for all.")
+    parser.add_argument("--submodules", nargs="*", metavar="NAME",
+                        help="Submodule names to process. If not given, fetch .gitmodules from boostorg/boost.")
     args = parser.parse_args()
 
     if not args.token:
@@ -602,8 +572,11 @@ def main() -> None:
     org = args.org
     translations_repo = args.translations_repo
 
-    limit = None if args.limit == 0 else args.limit
-    lib_submodules = get_lib_submodules(args.gitmodules_ref, token, limit=limit)
+    if args.submodules:
+        lib_submodules = [(name, f"libs/{name}") for name in args.submodules]
+        print(f"Using {len(lib_submodules)} submodules from input.", file=sys.stderr)
+    else:
+        lib_submodules = get_lib_submodules(args.gitmodules_ref, token)
 
     with tempfile.TemporaryDirectory() as work:
         boost_work = os.path.join(work, "boost")
