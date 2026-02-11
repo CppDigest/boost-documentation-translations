@@ -27,8 +27,8 @@ Invoke-Step "4/5" "Triggering add-submodule workflow..." {
     python .\trigger_add_submodule.py --token $TOKEN --version boost-1.90.0 --submodules algorithm system --lang-code zh_Hans
 }
 
-Write-Host "[5/5] Waiting 10s for workflow to finish..."
-Start-Sleep -Seconds 10
+Write-Host "[5/5] Waiting 120s for workflow to finish..."
+Start-Sleep -Seconds 120
 
 Invoke-Step "5/5" "Pulling (allow unrelated histories)..." {
     git pull origin master --allow-unrelated-histories
