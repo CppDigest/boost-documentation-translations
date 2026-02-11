@@ -180,6 +180,29 @@ def create_repo(org: str, repo: str, token: str, private: bool = False) -> None:
         raise RuntimeError(f"Create repo failed: {e.code} {resp_body}") from e
 
 
+def set_default_branch(org: str, repo: str, branch: str, token: str) -> None:
+    """Set the repository default branch via GitHub API (PATCH /repos/{org}/{repo})."""
+    url = f"{GITHUB_API_BASE}/repos/{org}/{repo}"
+    body = json.dumps({"name": repo, "default_branch": branch}).encode("utf-8")
+    req = Request(
+        url,
+        data=body,
+        method="PATCH",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urlopen(req, timeout=30) as _:
+            pass
+    except HTTPError as e:
+        resp_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        print(f"Warning: set default branch to {branch} failed: {e.code} {resp_body}", file=sys.stderr)
+
+
 def doc_paths_to_keep(
     libs: List[Tuple[str, str, str]]
 ) -> Set[str]:
@@ -474,6 +497,7 @@ def create_new_repo_and_push(
     run(["git", "checkout", "-b", LOCAL_BRANCH], cwd=submodule_clone)
     run(["git", "push", "-u", "origin", LOCAL_BRANCH], cwd=submodule_clone,
         env={**os.environ, "GITHUB_TOKEN": token})
+    set_default_branch(org, submodule_name, MASTER_BRANCH, token)
 
 
 def update_translations_submodule(
