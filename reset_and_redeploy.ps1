@@ -12,7 +12,7 @@ function Invoke-Step($step, $desc, [scriptblock]$cmd) {
 }
 
 Invoke-Step "1/5" "Deleting CppDigest lib repos..." {
-    python .\delete_cppdigest_lib_repos.py --token $TOKEN --submodules json unordered system algorithm --yes
+    python .\delete_cppdigest_lib_repos.py --token $TOKEN --submodules json unordered --yes
 }
 
 Write-Host "[2/5] Removing local libs folder and .gitmodules..."

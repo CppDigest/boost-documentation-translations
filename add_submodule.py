@@ -249,27 +249,39 @@ def first_segments(paths: Set[str]) -> Set[str]:
 
 def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
     """
-    Remove all folders except doc-related paths. Keep doc folders and all root path files.
-    Removes .git and .github too; caller runs git init again before add/commit/push.
+    Remove everything except: (1) all files at repo root, (2) full subtree of each doc path.
+    E.g. for paths_to_keep {"minmax/doc"}: keep every root file and all of minmax/doc (all
+    subfolders and files under minmax/doc). Removes .git and .github; caller re-inits git.
     paths_to_keep is e.g. {"doc", "minmax/doc", "string/doc"}.
     """
     def prune_dir(base: str, keep_paths: Set[str]) -> None:
-        current_segments = first_segments(keep_paths) if keep_paths else set()
         full_base = os.path.join(clone_dir, base) if base else clone_dir
         if not os.path.isdir(full_base):
             return
+        # Inside a doc path (exact match): keep entire subtree — all files and all subdirs.
+        if keep_paths and "" in keep_paths:
+            for name in os.listdir(full_base):
+                path = os.path.join(full_base, name)
+                rel = f"{base}/{name}" if base else name
+                if rel.startswith("/"):
+                    rel = rel[1:]
+                if not os.path.isfile(path):
+                    prune_dir(rel, {""})
+            return
+        current_segments = first_segments(keep_paths) if keep_paths else set()
         for name in os.listdir(full_base):
             path = os.path.join(full_base, name)
             rel = f"{base}/{name}" if base else name
             if rel.startswith("/"):
                 rel = rel[1:]
             if os.path.isfile(path):
-                # Keep files under a keep path, or any file at repo root
-                under = any(
+                # Keep if at repo root, or under a keep path
+                at_root = base == ""
+                under_keep = any(
                     rel == p or rel.startswith(p + "/")
                     for p in paths_to_keep
                 )
-                if not under and base != "":
+                if not at_root and not under_keep:
                     os.remove(path)
             else:
                 if name not in current_segments and rel not in paths_to_keep:
