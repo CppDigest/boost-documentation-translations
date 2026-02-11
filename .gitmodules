@@ -1,0 +1,4 @@
+[submodule "libs/system"]
+	path = libs/system
+	url = https://x-access-token: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@github.com/CppDigest/system.git
+	branch = master
