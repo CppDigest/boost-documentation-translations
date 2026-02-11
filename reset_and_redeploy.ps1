@@ -11,9 +11,9 @@ function Invoke-Step($step, $desc, [scriptblock]$cmd) {
     }
 }
 
-Invoke-Step "1/5" "Deleting CppDigest lib repos..." {
-    python .\delete_cppdigest_lib_repos.py --token $TOKEN --submodules algorithm system --yes
-}
+# Invoke-Step "1/5" "Deleting CppDigest lib repos..." {
+#     python .\delete_cppdigest_lib_repos.py --token $TOKEN --submodules json unordered --yes
+# }
 
 Write-Host "[2/5] Removing local libs folder and .gitmodules..."
 if (Test-Path libs) { Remove-Item -Recurse -Force libs }
@@ -24,7 +24,7 @@ Invoke-Step "3/5" "Pushing project..." {
 }
 
 Invoke-Step "4/5" "Triggering add-submodule workflow..." {
-    python .\trigger_add_submodule.py --token $TOKEN --version boost-1.89.0 --submodules algorithm system --lang-code zh_Hans
+    python .\trigger_add_submodule.py --token $TOKEN --version boost-1.89.0 --submodules json unordered --lang-code zh_Hans
 }
 
 Write-Host "[5/5] Waiting 120s for workflow to finish..."
