@@ -2,7 +2,7 @@
 """
 Sync Boost library documentation from boostorg/boost to CppDigest organization.
 
-Triggered by CI (repository_dispatch). Submodule list: either pass --submodules, or
+Triggered by CI (repository_dispatch). Submodule list: pass --submodules as a list-like string (e.g. [algorithm, system]), or
 fetch .gitmodules from https://github.com/boostorg/boost (ref = specified version or master).
 For each libs/ submodule:
 1. Clone boostorg repo at given ref; keep only doc folders per meta/libraries.json.
@@ -192,6 +192,21 @@ def doc_paths_to_keep(
         path = "doc" if not subpath else f"{subpath}/doc"
         out.add(path)
     return out
+
+
+def parse_submodules_list(s: str) -> List[str]:
+    """
+    Parse a list-like string into submodule names.
+    E.g. '[algorithm]' -> ['algorithm'], '[algorithm, system]' -> ['algorithm', 'system'].
+    """
+    if not s or not s.strip():
+        return []
+    s = s.strip()
+    if s.startswith("["):
+        s = s[1:]
+    if s.endswith("]"):
+        s = s[:-1]
+    return [name.strip() for name in s.split(",") if name.strip()]
 
 
 def first_segments(paths: Set[str]) -> Set[str]:
@@ -560,8 +575,8 @@ def main() -> None:
     parser.add_argument("--translations-repo", default="boost-documentation-translations",
                         help="Repo holding submodule links")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token")
-    parser.add_argument("--submodules", nargs="*", metavar="NAME",
-                        help="Submodule names to process. If not given, fetch .gitmodules from boostorg/boost.")
+    parser.add_argument("--submodules", default="", metavar="LIST",
+                        help="List-like string of submodule names (e.g. [algorithm, system]). If empty, fetch .gitmodules from boostorg/boost.")
     args = parser.parse_args()
 
     if not args.token:
@@ -572,8 +587,9 @@ def main() -> None:
     org = args.org
     translations_repo = args.translations_repo
 
-    if args.submodules:
-        lib_submodules = [(name, f"libs/{name}") for name in args.submodules]
+    submodule_names = parse_submodules_list(args.submodules)
+    if submodule_names:
+        lib_submodules = [(name, f"libs/{name}") for name in submodule_names]
         print(f"Using {len(lib_submodules)} submodules from input.", file=sys.stderr)
     else:
         lib_submodules = get_lib_submodules(args.gitmodules_ref, token)

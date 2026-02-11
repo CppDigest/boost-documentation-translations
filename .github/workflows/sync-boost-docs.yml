@@ -7,7 +7,7 @@
 # client_payload (optional):
 #   version: Boost release ref (e.g. boost-1.90.0). If set: used for both boost repo (.gitmodules)
 #     and individual library repos. If omitted: boost repo uses master, library repos use develop.
-#   submodules: List of submodule names to sync. If set, .gitmodules is not fetched.
+#   submodules: List-like string of submodule names (e.g. [algorithm, system]). If set, .gitmodules is not fetched.
 #
 # Required secret: SYNC_TOKEN — PAT with repo (and org repo create) permissions for CppDigest.
 
@@ -41,12 +41,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
           GITMODULES_REF: ${{ github.event.client_payload.version || 'master' }}
           LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
-          SUBMODULES_JSON: ${{ toJSON(github.event.client_payload.submodules || fromJSON('[]')) }}
+          SUBMODULES: ${{ github.event.client_payload.submodules || '' }}
         run: |
-          SUBMODULES=$(python3 -c "import os,json; print(' '.join(json.loads(os.environ.get('SUBMODULES_JSON','[]'))))")
           python sync_boost_docs_to_cppdigest.py \
             --gitmodules-ref "$GITMODULES_REF" \
             --libs-ref "$LIBS_REF" \
             --org "${{ env.ORG }}" \
             --translations-repo "${{ env.TRANSLATIONS_REPO }}" \
-            --submodules $SUBMODULES
+            --submodules "$SUBMODULES"
