@@ -508,6 +508,7 @@ def _commit_and_push_translations_branch(
     branch: str,
     libs_ref: str,
     token: str,
+    translations_repo_url: str,
     force_push: bool = False,
 ) -> None:
     """Commit submodule updates and push the current branch."""
@@ -517,7 +518,8 @@ def _commit_and_push_translations_branch(
         cwd=translations_dir,
         check=False,
     )
-    push_cmd = ["git", "push", "origin", branch]
+    push_url = authed_url(translations_repo_url, token)
+    push_cmd = ["git", "push", push_url, branch]
     if force_push:
         push_cmd.insert(2, "--force")
     push_result = run(
@@ -541,10 +543,12 @@ def finalize_translations_repo(
     updates_master: List[str],
     updates_local: List[str],
     org: str,
+    translations_repo: str,
 ) -> None:
     """Update boost-documentation-translations on master and local branches per prompt (3) and (4)."""
     if not updates_master and not updates_local:
         return
+    translations_repo_url = f"https://github.com/{org}/{translations_repo}.git"
     run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
     run(
         [
@@ -557,6 +561,7 @@ def finalize_translations_repo(
         update_translations_submodule(translations_dir, org, submodule_name, MASTER_BRANCH)
     _commit_and_push_translations_branch(
         translations_dir, MASTER_BRANCH, libs_ref, token,
+        translations_repo_url,
     )
     run(
         [
@@ -570,6 +575,7 @@ def finalize_translations_repo(
         update_translations_submodule(translations_dir, org, submodule_name, LOCAL_BRANCH)
     _commit_and_push_translations_branch(
         translations_dir, LOCAL_BRANCH, libs_ref, token,
+        translations_repo_url,
         force_push=True,
     )
 
@@ -698,6 +704,7 @@ def main() -> None:
             finalize_translations_repo(
                 translations_dir, args.libs_ref, token,
                 updates_master, updates_local, org,
+                args.translations_repo,
             )
 
     print("Done.", file=sys.stderr)
