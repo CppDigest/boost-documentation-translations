@@ -450,9 +450,12 @@ def sync_existing_repo(
         check=False,
     )
     run(
+        ["git", "remote", "set-url", "origin", authed_url(repo_url, token)],
+        cwd=dest_repo,
+    )
+    run(
         ["git", "push", "origin", master_branch],
         cwd=dest_repo,
-        env={**os.environ, "GITHUB_TOKEN": token},
     )
     if has_open_translation_pr(org, submodule_name, libs_ref, token, lang_code=lang_code):
         return
