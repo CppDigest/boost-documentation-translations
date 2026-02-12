@@ -1,6 +1,8 @@
 # Data files
 data/
 
+.env
+
 # Cursor files
 .cursor/
 
