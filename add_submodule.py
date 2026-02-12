@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sync Boost library documentation from boostorg/boost to CppDigest organization.
+Add Boost library documentation from boostorg/boost as submodules to CppDigest.
 
 Triggered by CI (repository_dispatch, event add-submodule). Submodule list: pass
 --submodules as a list-like string (e.g. [algorithm, system]), or fetch
@@ -210,7 +210,10 @@ def set_default_branch(org: str, repo: str, branch: str, token: str) -> None:
             pass
     except HTTPError as e:
         resp_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-        print(f"Warning: set default branch to {branch} failed: {e.code} {resp_body}", file=sys.stderr)
+        print(
+            f"Warning: set default branch to {branch} failed: {e.code} {resp_body}",
+            file=sys.stderr,
+        )
 
 
 def doc_paths_to_keep(
@@ -264,7 +267,7 @@ def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
         full_base = os.path.join(clone_dir, base) if base else clone_dir
         if not os.path.isdir(full_base):
             return
-        # Inside a doc path (exact match): keep entire subtree — all files and all subdirs.
+        # "" in keep_paths is the sentinel for "keep entire subtree from here down".
         if keep_paths and "" in keep_paths:
             for name in os.listdir(full_base):
                 path = os.path.join(full_base, name)
@@ -304,7 +307,8 @@ def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
 
 
 def clone_repo_keep_git(repo_url: str, branch: str, dest: str) -> None:
-    """Clone repo (full, all branches) into dest, keeping .git; checkout branch. No auth; public repos."""
+    """Clone repo (full, all branches) into dest, keeping .git; checkout branch.
+    No auth; public repos."""
     os.makedirs(dest, exist_ok=True)
     run(["git", "clone", repo_url, dest])
     run(["git", "checkout", branch], cwd=dest)
@@ -320,8 +324,9 @@ def clone_repo(repo_url: str, ref: str, dest: str) -> None:
 
 
 def authed_url(repo_url: str, token: Optional[str]) -> str:
-    """Return repo_url with token embedded for HTTPS GitHub URLs. Token is quoted so : or @ do not break the URL.
-    If repo_url already contains credentials (e.g. from a previous set-url), they are stripped so we do not double-embed."""
+    """Return repo_url with token embedded for HTTPS GitHub URLs.
+    Token is quoted so : or @ do not break the URL.
+    Existing credentials are stripped to avoid double-embed."""
     if not token or "github.com" not in repo_url:
         return repo_url
     parsed = urlparse(repo_url)
@@ -407,7 +412,6 @@ def update_local_rebase_onto_master(
     run(
         ["git", "push", "--force", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
         cwd=repo_dir,
-        env={**os.environ, "GITHUB_TOKEN": token},
     )
 
 
@@ -423,7 +427,7 @@ def sync_existing_repo(
     lang_code: Optional[str] = None,
 ) -> None:
     """Wipe dest_repo (except .git), copy from submodule_clone, commit and push.
-    If no open PR from boost-<sub>-<language_code>-translation-<version>, rebase local onto master."""
+    If no open PR from boost-<sub>-<lang>-translation-<version>, rebase local onto master."""
     for item in os.listdir(dest_repo):
         if item == ".git":
             continue
@@ -475,15 +479,19 @@ def create_new_repo_and_push(
     run(["git", "init"], cwd=submodule_clone)
     set_git_bot_config(submodule_clone)
     run(["git", "add", "-A"], cwd=submodule_clone)
-    run(["git", "commit", "-m", f"Create the original documentation of {libs_ref}"], cwd=submodule_clone)
+    run(
+        ["git", "commit", "-m", f"Create the original documentation of {libs_ref}"],
+        cwd=submodule_clone,
+    )
     run(["git", "branch", "-M", MASTER_BRANCH], cwd=submodule_clone)
     run(["git", "remote", "remove", "origin"], cwd=submodule_clone, check=False)
-    run(["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)], cwd=submodule_clone)
-    run(["git", "push", "-u", "origin", MASTER_BRANCH], cwd=submodule_clone,
-        env={**os.environ, "GITHUB_TOKEN": token})
+    run(
+        ["git", "remote", "add", "origin", authed_url(cppdigest_repo_url, token)],
+        cwd=submodule_clone,
+    )
+    run(["git", "push", "-u", "origin", MASTER_BRANCH], cwd=submodule_clone)
     run(["git", "checkout", "-b", LOCAL_BRANCH], cwd=submodule_clone)
-    run(["git", "push", "-u", "origin", LOCAL_BRANCH], cwd=submodule_clone,
-        env={**os.environ, "GITHUB_TOKEN": token})
+    run(["git", "push", "-u", "origin", LOCAL_BRANCH], cwd=submodule_clone)
     set_default_branch(org, submodule_name, MASTER_BRANCH, token)
 
 
@@ -516,7 +524,11 @@ def update_translations_submodule(
             ["git", "config", f"submodule.{submodule_path}.url", submodule_url_authed],
             cwd=translations_dir,
         )
-        run(["git", "submodule", "update", "--init", submodule_path], cwd=translations_dir, check=False)
+        run(
+            ["git", "submodule", "update", "--init", submodule_path],
+            cwd=translations_dir,
+            check=False,
+        )
         # Submodule's own origin is used by "update --remote"; set it so fetch can authenticate.
         # Prefer .git/modules/<path> (modern submodule layout) so we don't depend on worktree .git.
         submodule_git_dir = os.path.join(translations_dir, ".git", "modules", submodule_path)
@@ -542,11 +554,12 @@ def update_translations_submodule(
         if update_remote.returncode != 0:
             if update_remote.stderr:
                 print(update_remote.stderr, file=sys.stderr)
+            err = update_remote.stderr or ""
             raise subprocess.CalledProcessError(
                 update_remote.returncode,
                 update_remote.args,
                 update_remote.stdout,
-                update_remote.stderr,
+                err,
             )
         run(["git", "add", submodule_path], cwd=translations_dir)
     else:
@@ -562,7 +575,10 @@ def update_translations_submodule(
         )
         # Overwrite URL in .gitmodules to plain URL so commit does not contain the token.
         run(
-            ["git", "config", "-f", ".gitmodules", f"submodule.{submodule_path}.url", submodule_url],
+            [
+                "git", "config", "-f", ".gitmodules",
+                f"submodule.{submodule_path}.url", submodule_url,
+            ],
             cwd=translations_dir,
         )
         run(["git", "add", ".gitmodules", submodule_path], cwd=translations_dir)
@@ -601,7 +617,7 @@ def _commit_and_push_translations_branch(
     )
     if push_result.returncode != 0:
         if push_result.stderr:
-            print(push_result.stderr, file=sys.stderr)
+            print((push_result.stderr or ""), file=sys.stderr)
         raise RuntimeError(
             f"Failed to push {branch}: exit {push_result.returncode}"
         )
@@ -615,7 +631,7 @@ def finalize_translations_repo(
     updates_local: List[str],
     org: str,
 ) -> None:
-    """Update boost-documentation-translations on master and local branches per prompt (3) and (4)."""
+    """Update boost-documentation-translations on master and local branches (prompt 3 and 4)."""
     if not updates_master and not updates_local:
         return
     run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
@@ -674,7 +690,7 @@ def process_one_submodule(
     try:
         clone_repo(boost_repo_url, libs_ref, submodule_clone)
     except subprocess.CalledProcessError as e:
-        print(f"  Clone failed: {e.stderr}", file=sys.stderr)
+        print(f"  Clone failed: {(e.stderr or '')}", file=sys.stderr)
         return False
 
     run(["git", "init"], cwd=submodule_clone)
@@ -688,7 +704,11 @@ def process_one_submodule(
         try:
             clone_repo_keep_git(cppdigest_repo_url, MASTER_BRANCH, dest_repo)
         except subprocess.CalledProcessError as e:
-            print(f"  clone_repo_keep_git failed: {e}", file=sys.stderr)
+            stderr = getattr(e, "stderr", None) or ""
+            msg = f"  clone_repo_keep_git failed: {e}"
+            if stderr:
+                msg += ": " + stderr
+            print(msg, file=sys.stderr)
             return False
         sync_existing_repo(
             dest_repo, submodule_clone, MASTER_BRANCH, libs_ref,
@@ -704,8 +724,12 @@ def process_one_submodule(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sync Boost docs to CppDigest")
-    parser.add_argument("--gitmodules-ref", default="master", help="Ref for .gitmodules (e.g. master)")
-    parser.add_argument("--libs-ref", default="develop", help="Ref for libs (e.g. boost-1.90.0 or develop)")
+    parser.add_argument(
+        "--gitmodules-ref", default="master", help="Ref for .gitmodules (e.g. master)",
+    )
+    parser.add_argument(
+        "--libs-ref", default="develop", help="Ref for libs (e.g. boost-1.90.0 or develop)",
+    )
     parser.add_argument("--org", default="CppDigest", help="Target organization")
     parser.add_argument(
         "--translations-repo",
@@ -725,7 +749,8 @@ def main() -> None:
         default="",
         metavar="LANG",
         help="Language code for translation PR branch (e.g. zh_Hans). "
-             "When set, only PRs from boost-<sub>-<lang_code>-translation-<version> are considered.",
+             "When set, only PRs from boost-<sub>-<lang_code>-translation-<version> "
+             "are considered.",
     )
     args = parser.parse_args()
 
