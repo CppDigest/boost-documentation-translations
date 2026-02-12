@@ -480,6 +480,16 @@ def create_new_repo_and_push(
     set_default_branch(org, submodule_name, MASTER_BRANCH, token)
 
 
+def _submodule_in_gitmodules(translations_dir: str, submodule_path: str) -> bool:
+    """True if submodule_path is registered in the current branch's .gitmodules."""
+    result = run(
+        ["git", "config", "--file", ".gitmodules", "--get", f"submodule.{submodule_path}.url"],
+        cwd=translations_dir,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def update_translations_submodule(
     translations_dir: str,
     org: str,
@@ -493,7 +503,8 @@ def update_translations_submodule(
     submodule_url = f"https://github.com/{org}/{submodule_name}.git"
     submodule_url_authed = authed_url(submodule_url, token)
 
-    if os.path.isdir(libs_path):
+    submodule_known = _submodule_in_gitmodules(translations_dir, submodule_path)
+    if submodule_known and os.path.isdir(libs_path):
         run(
             ["git", "config", f"submodule.{submodule_path}.url", submodule_url_authed],
             cwd=translations_dir,
@@ -532,6 +543,12 @@ def update_translations_submodule(
             )
         run(["git", "add", submodule_path], cwd=translations_dir)
     else:
+        # Submodule not on this branch (e.g. local has no libs/json yet); add it.
+        if os.path.isdir(libs_path):
+            shutil.rmtree(libs_path, ignore_errors=True)
+        modules_dir = os.path.join(translations_dir, ".git", "modules", submodule_path)
+        if os.path.isdir(modules_dir):
+            shutil.rmtree(modules_dir, ignore_errors=True)
         run(
             ["git", "submodule", "add", "-b", branch, submodule_url_authed, submodule_path],
             cwd=translations_dir,
