@@ -24,7 +24,7 @@ import sys
 import tempfile
 from typing import List, Optional, Set, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 USER_AGENT = "BoostDocsSync/1.0"
@@ -320,11 +320,12 @@ def clone_repo(repo_url: str, ref: str, dest: str) -> None:
 
 
 def authed_url(repo_url: str, token: Optional[str]) -> str:
-    """Return repo_url with token embedded for HTTPS GitHub URLs."""
+    """Return repo_url with token embedded for HTTPS GitHub URLs. Token is quoted so : or @ do not break the URL."""
     if not token or "github.com" not in repo_url:
         return repo_url
     parsed = urlparse(repo_url)
-    return f"{parsed.scheme}://x-access-token:{token}@{parsed.netloc}{parsed.path}"
+    token_quoted = quote(token, safe="")
+    return f"{parsed.scheme}://x-access-token:{token_quoted}@{parsed.netloc}{parsed.path}"
 
 
 def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]:
