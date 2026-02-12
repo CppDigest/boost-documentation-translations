@@ -499,6 +499,12 @@ def update_translations_submodule(
             cwd=translations_dir,
         )
         run(["git", "submodule", "update", "--init", submodule_path], cwd=translations_dir, check=False)
+        # Submodule's own origin is used by "update --remote"; set it so fetch can authenticate.
+        if os.path.isdir(os.path.join(libs_path, ".git")) or os.path.isfile(os.path.join(libs_path, ".git")):
+            run(
+                ["git", "remote", "set-url", "origin", submodule_url_authed],
+                cwd=libs_path,
+            )
         run(["git", "submodule", "update", "--remote", submodule_path], cwd=translations_dir)
         run(["git", "add", submodule_path], cwd=translations_dir)
     else:
