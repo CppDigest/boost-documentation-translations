@@ -1,6 +1,9 @@
 # Data files
 data/
 
+# Env (secrets)
+.env
+
 # Cursor files
 .cursor/
 
