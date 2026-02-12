@@ -485,19 +485,25 @@ def update_translations_submodule(
     org: str,
     submodule_name: str,
     branch: str,
+    token: str,
 ) -> None:
     """Update libs/<submodule_name> to latest commit on branch; add submodule if needed."""
     libs_path = os.path.join(translations_dir, "libs", submodule_name)
     submodule_path = f"libs/{submodule_name}"
+    submodule_url = f"https://github.com/{org}/{submodule_name}.git"
+    submodule_url_authed = authed_url(submodule_url, token)
 
     if os.path.isdir(libs_path):
+        run(
+            ["git", "config", f"submodule.{submodule_path}.url", submodule_url_authed],
+            cwd=translations_dir,
+        )
         run(["git", "submodule", "update", "--init", submodule_path], cwd=translations_dir, check=False)
         run(["git", "submodule", "update", "--remote", submodule_path], cwd=translations_dir)
         run(["git", "add", submodule_path], cwd=translations_dir)
     else:
-        submodule_url = f"https://github.com/{org}/{submodule_name}.git"
         run(
-            ["git", "submodule", "add", "-b", branch, submodule_url, submodule_path],
+            ["git", "submodule", "add", "-b", branch, submodule_url_authed, submodule_path],
             cwd=translations_dir,
         )
         run(["git", "add", ".gitmodules", submodule_path], cwd=translations_dir)
@@ -562,7 +568,7 @@ def finalize_translations_repo(
         cwd=translations_dir,
     )
     for submodule_name in updates_master:
-        update_translations_submodule(translations_dir, org, submodule_name, MASTER_BRANCH)
+        update_translations_submodule(translations_dir, org, submodule_name, MASTER_BRANCH, token)
     _commit_and_push_translations_branch(
         translations_dir, MASTER_BRANCH, libs_ref, token,
     )
@@ -575,7 +581,7 @@ def finalize_translations_repo(
     )
     # Super's local branch: record each submodule at sub's local branch.
     for submodule_name in updates_local:
-        update_translations_submodule(translations_dir, org, submodule_name, LOCAL_BRANCH)
+        update_translations_submodule(translations_dir, org, submodule_name, LOCAL_BRANCH, token)
     _commit_and_push_translations_branch(
         translations_dir, LOCAL_BRANCH, libs_ref, token,
         force_push=True,
