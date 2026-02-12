@@ -506,6 +506,11 @@ def update_translations_submodule(
             ["git", "submodule", "add", "-b", branch, submodule_url_authed, submodule_path],
             cwd=translations_dir,
         )
+        # Overwrite URL in .gitmodules to plain URL so commit does not contain the token.
+        run(
+            ["git", "config", "-f", ".gitmodules", f"submodule.{submodule_path}.url", submodule_url],
+            cwd=translations_dir,
+        )
         run(["git", "add", ".gitmodules", submodule_path], cwd=translations_dir)
 
 
