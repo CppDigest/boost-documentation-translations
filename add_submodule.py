@@ -500,12 +500,36 @@ def update_translations_submodule(
         )
         run(["git", "submodule", "update", "--init", submodule_path], cwd=translations_dir, check=False)
         # Submodule's own origin is used by "update --remote"; set it so fetch can authenticate.
-        if os.path.isdir(os.path.join(libs_path, ".git")) or os.path.isfile(os.path.join(libs_path, ".git")):
+        # Prefer .git/modules/<path> (modern submodule layout) so we don't depend on worktree .git.
+        submodule_git_dir = os.path.join(translations_dir, ".git", "modules", submodule_path)
+        if os.path.isdir(submodule_git_dir):
+            run(
+                [
+                    "git", "--git-dir", submodule_git_dir,
+                    "remote", "set-url", "origin", submodule_url_authed,
+                ],
+                cwd=translations_dir,
+            )
+        else:
             run(
                 ["git", "remote", "set-url", "origin", submodule_url_authed],
                 cwd=libs_path,
+                check=False,
             )
-        run(["git", "submodule", "update", "--remote", submodule_path], cwd=translations_dir)
+        update_remote = run(
+            ["git", "submodule", "update", "--remote", submodule_path],
+            cwd=translations_dir,
+            check=False,
+        )
+        if update_remote.returncode != 0:
+            if update_remote.stderr:
+                print(update_remote.stderr, file=sys.stderr)
+            raise subprocess.CalledProcessError(
+                update_remote.returncode,
+                update_remote.args,
+                update_remote.stdout,
+                update_remote.stderr,
+            )
         run(["git", "add", submodule_path], cwd=translations_dir)
     else:
         run(
