@@ -39,6 +39,14 @@ GITMODULES_PATH_PREFIX = "path = "
 BOT_EMAIL = "Boost-Translation-CI-Bot@cppdigest.local"
 BOT_NAME = "Boost-Translation-CI-Bot"
 
+# Redact authed URLs (x-access-token:...) so token never appears in logs.
+_REDACT_AUTHED_URL = re.compile(r"(x-access-token:)[^@\s]+(@)")
+
+
+def _redact_authed_urls(text: str) -> str:
+    """Replace token in x-access-token:TOKEN@ with *** so logs stay safe."""
+    return _REDACT_AUTHED_URL.sub(r"\1***\2", text) if text else ""
+
 
 def set_git_bot_config(repo_dir: str) -> None:
     """Configure git user as CI bot."""
@@ -447,7 +455,6 @@ def sync_existing_repo(
             shutil.copy2(src, dst)
     set_git_bot_config(dest_repo)
     run(["git", "add", "-A"], cwd=dest_repo)
-    run(["git", "status", "--short"], cwd=dest_repo)
     run(
         ["git", "commit", "-m", f"Update the original documentation of {libs_ref}"],
         cwd=dest_repo,
@@ -530,22 +537,11 @@ def update_translations_submodule(
             check=False,
         )
         # Submodule's own origin is used by "update --remote"; set it so fetch can authenticate.
-        # Prefer .git/modules/<path> (modern submodule layout) so we don't depend on worktree .git.
-        submodule_git_dir = os.path.join(translations_dir, ".git", "modules", submodule_path)
-        if os.path.isdir(submodule_git_dir):
-            run(
-                [
-                    "git", "--git-dir", submodule_git_dir,
-                    "remote", "set-url", "origin", submodule_url_authed,
-                ],
-                cwd=translations_dir,
-            )
-        else:
-            run(
-                ["git", "remote", "set-url", "origin", submodule_url_authed],
-                cwd=libs_path,
-                check=False,
-            )
+        run(
+            ["git", "remote", "set-url", "origin", submodule_url_authed],
+            cwd=libs_path,
+            check=False,
+        )
         update_remote = run(
             ["git", "submodule", "update", "--remote", submodule_path],
             cwd=translations_dir,
@@ -553,13 +549,13 @@ def update_translations_submodule(
         )
         if update_remote.returncode != 0:
             if update_remote.stderr:
-                print(update_remote.stderr, file=sys.stderr)
+                print(_redact_authed_urls(update_remote.stderr), file=sys.stderr)
             err = update_remote.stderr or ""
             raise subprocess.CalledProcessError(
                 update_remote.returncode,
                 update_remote.args,
-                update_remote.stdout,
-                err,
+                _redact_authed_urls(update_remote.stdout or ""),
+                _redact_authed_urls(err),
             )
         run(["git", "add", submodule_path], cwd=translations_dir)
     else:
@@ -617,7 +613,7 @@ def _commit_and_push_translations_branch(
     )
     if push_result.returncode != 0:
         if push_result.stderr:
-            print((push_result.stderr or ""), file=sys.stderr)
+            print(_redact_authed_urls(push_result.stderr or ""), file=sys.stderr)
         raise RuntimeError(
             f"Failed to push {branch}: exit {push_result.returncode}"
         )
@@ -690,7 +686,7 @@ def process_one_submodule(
     try:
         clone_repo(boost_repo_url, libs_ref, submodule_clone)
     except subprocess.CalledProcessError as e:
-        print(f"  Clone failed: {(e.stderr or '')}", file=sys.stderr)
+        print("  Clone failed:", _redact_authed_urls(e.stderr or ""), file=sys.stderr)
         return False
 
     run(["git", "init"], cwd=submodule_clone)
@@ -707,7 +703,7 @@ def process_one_submodule(
             stderr = getattr(e, "stderr", None) or ""
             msg = f"  clone_repo_keep_git failed: {e}"
             if stderr:
-                msg += ": " + stderr
+                msg += ": " + _redact_authed_urls(stderr)
             print(msg, file=sys.stderr)
             return False
         sync_existing_repo(
