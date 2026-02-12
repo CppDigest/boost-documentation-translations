@@ -320,12 +320,15 @@ def clone_repo(repo_url: str, ref: str, dest: str) -> None:
 
 
 def authed_url(repo_url: str, token: Optional[str]) -> str:
-    """Return repo_url with token embedded for HTTPS GitHub URLs. Token is quoted so : or @ do not break the URL."""
+    """Return repo_url with token embedded for HTTPS GitHub URLs. Token is quoted so : or @ do not break the URL.
+    If repo_url already contains credentials (e.g. from a previous set-url), they are stripped so we do not double-embed."""
     if not token or "github.com" not in repo_url:
         return repo_url
     parsed = urlparse(repo_url)
+    # Strip any existing user:pass@ so we never double-embed (e.g. on second push in same run).
+    host = parsed.netloc.split("@")[-1] if "@" in parsed.netloc else parsed.netloc
     token_quoted = quote(token, safe="")
-    return f"{parsed.scheme}://x-access-token:{token_quoted}@{parsed.netloc}{parsed.path}"
+    return f"{parsed.scheme}://x-access-token:{token_quoted}@{host}{parsed.path}"
 
 
 def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]:
