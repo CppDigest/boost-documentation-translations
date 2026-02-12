@@ -31,13 +31,19 @@ USER_AGENT = "BoostDocsSync/1.0"
 BOOST_ORG = "boostorg"
 MASTER_BRANCH = "master"
 LOCAL_BRANCH = "local"
-TRANSLATIONS_MASTER_BRANCH = "master"
-TRANSLATIONS_LOCAL_BRANCH = "local"
 GITHUB_API_BASE = "https://api.github.com"
 GITMODULES_URL_TEMPLATE = "https://raw.githubusercontent.com/boostorg/boost/{ref}/.gitmodules"
 LIBS_JSON_TEMPLATE = "https://raw.githubusercontent.com/boostorg/{repo}/{ref}/meta/libraries.json"
 REPO_URL_TEMPLATE = "https://github.com/boostorg/{repo}.git"
 GITMODULES_PATH_PREFIX = "path = "
+BOT_EMAIL = "Boost-Translation-CI-Bot@cppdigest.local"
+BOT_NAME = "Boost-Translation-CI-Bot"
+
+
+def set_git_bot_config(repo_dir: str) -> None:
+    """Configure git user as CI bot."""
+    run(["git", "config", "user.email", BOT_EMAIL], cwd=repo_dir)
+    run(["git", "config", "user.name", BOT_NAME], cwd=repo_dir)
 
 
 def fetch_url(url: str, token: Optional[str] = None) -> str:
@@ -297,16 +303,18 @@ def prune_to_doc_only(clone_dir: str, paths_to_keep: Set[str]) -> None:
     prune_dir("", paths_to_keep)
 
 
-def clone_repo(
-    repo_url: str,
-    ref: str,
-    dest: str,
-    token: Optional[str] = None,
-) -> None:
-    """Clone repo at ref into dest. Uses token for HTTPS if provided."""
+def clone_repo_keep_git(repo_url: str, branch: str, dest: str) -> None:
+    """Clone repo (full, all branches) into dest, keeping .git; checkout branch. No auth; public repos."""
     os.makedirs(dest, exist_ok=True)
-    url = authed_url(repo_url, token)
-    run(["git", "clone", "--depth", "1", "--branch", ref, url, dest])
+    run(["git", "clone", repo_url, dest])
+    run(["git", "checkout", branch], cwd=dest)
+
+
+def clone_repo(repo_url: str, ref: str, dest: str) -> None:
+    """Clone repo (full, all branches) at ref into dest. No auth; for public repos."""
+    os.makedirs(dest, exist_ok=True)
+    run(["git", "clone", repo_url, dest])
+    run(["git", "checkout", ref], cwd=dest)
     # Remove .git so we can use dest as plain copy source if needed; caller may re-init
     shutil.rmtree(os.path.join(dest, ".git"), ignore_errors=True)
 
@@ -317,19 +325,6 @@ def authed_url(repo_url: str, token: Optional[str]) -> str:
         return repo_url
     parsed = urlparse(repo_url)
     return f"{parsed.scheme}://x-access-token:{token}@{parsed.netloc}{parsed.path}"
-
-
-def clone_repo_keep_git(
-    repo_url: str,
-    branch: str,
-    dest: str,
-    token: Optional[str] = None,
-) -> None:
-    """Clone repo (single branch) into dest, keeping .git."""
-    if os.path.isdir(dest):
-        shutil.rmtree(dest)
-    url = authed_url(repo_url, token)
-    run(["git", "clone", "--depth", "1", "--branch", branch, url, dest])
 
 
 def get_lib_submodules(gitmodules_ref: str, token: str) -> List[Tuple[str, str]]:
@@ -351,41 +346,13 @@ def ensure_translations_cloned(
     org: str,
     translations_repo: str,
     translations_dir: str,
-    token: str,
 ) -> None:
     """Clone translations repo and set git config if not already present."""
     if os.path.isdir(os.path.join(translations_dir, ".git")):
         return
     trans_url = f"https://github.com/{org}/{translations_repo}.git"
-    clone_repo_keep_git(trans_url, TRANSLATIONS_MASTER_BRANCH, translations_dir, token=token)
-    # Unshallow so we can push other branches (local) that share history with master.
-    run(["git", "fetch", "--unshallow", "origin"], cwd=translations_dir, check=False)
-    run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
-    run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=translations_dir)
-    run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=translations_dir)
-
-
-def get_master_and_local_shas(target_repo: str, token: str) -> Tuple[str, str]:
-    """Resolve master and local branch SHAs for the target repo. Returns (master_sha, local_sha).
-    target_repo is the path to a clone of a CppDigest library repo, e.g. /tmp/xyz/cppdigest/algorithm."""
-    run(["git", "fetch", "origin", MASTER_BRANCH], cwd=target_repo, check=False)
-    rev_master = run(
-        ["git", "rev-parse", f"origin/{MASTER_BRANCH}"],
-        cwd=target_repo,
-        check=False,
-    )
-    if rev_master.returncode != 0:
-        raise RuntimeError(f"Failed to get master SHA for {target_repo}")
-    run(["git", "fetch", "origin", LOCAL_BRANCH], cwd=target_repo, check=False)
-    rev_local = run(
-        ["git", "rev-parse", f"origin/{LOCAL_BRANCH}"],
-        cwd=target_repo,
-        check=False,
-    )
-    if rev_local.returncode != 0:
-        raise RuntimeError(f"Failed to get local SHA for {target_repo}")
-        
-    return (rev_master.stdout.strip(), rev_local.stdout.strip())
+    clone_repo_keep_git(trans_url, MASTER_BRANCH, translations_dir)
+    set_git_bot_config(translations_dir)
 
 
 def has_open_translation_pr(
@@ -407,15 +374,11 @@ def has_open_translation_pr(
     except (HTTPError, URLError, json.JSONDecodeError) as e:
         print(f"Error checking open PRs: {e}", file=sys.stderr)
         return False
-    if lang_code:
-        pattern = re.compile(
-            r"^boost-" + re.escape(repo) + r"-" + re.escape(lang_code) + r"-translation-.+$",
-            re.IGNORECASE,
-        )
-    else:
-        pattern = re.compile(
-            r"^boost-" + re.escape(repo) + r"-.+-translation-.+$", re.IGNORECASE
-        )
+    lang_pattern = r"-" + re.escape(lang_code) if lang_code else r"-.+"
+    pattern = re.compile(
+        r"^boost-" + re.escape(repo) + lang_pattern + r"-translation-.+$",
+        re.IGNORECASE,
+    )
     for pr in data:
         ref = (pr.get("head") or {}).get("ref") or ""
         if pattern.match(ref):
@@ -431,22 +394,11 @@ def update_local_rebase_onto_master(
     """Update local branch by rebasing onto origin/master, then push (--force)."""
     run(["git", "fetch", "origin", MASTER_BRANCH], cwd=repo_dir)
     run(["git", "fetch", "origin", LOCAL_BRANCH], cwd=repo_dir, check=False)
-    rev_local = run(
-        ["git", "rev-parse", f"origin/{LOCAL_BRANCH}"],
+    run(
+        ["git", "checkout", "-B", LOCAL_BRANCH, f"origin/{LOCAL_BRANCH}"],
         cwd=repo_dir,
-        check=False,
     )
-    if rev_local.returncode != 0:
-        run(
-            ["git", "checkout", "-b", LOCAL_BRANCH, f"origin/{MASTER_BRANCH}"],
-            cwd=repo_dir,
-        )
-    else:
-        run(
-            ["git", "checkout", "-B", LOCAL_BRANCH, f"origin/{LOCAL_BRANCH}"],
-            cwd=repo_dir,
-        )
-        run(["git", "rebase", f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
+    run(["git", "rebase", f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
     push_url = authed_url(repo_url, token)
     run(
         ["git", "push", "--force", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
@@ -485,8 +437,7 @@ def sync_existing_repo(
             shutil.copytree(src, dst)
         else:
             shutil.copy2(src, dst)
-    run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=dest_repo)
-    run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=dest_repo)
+    set_git_bot_config(dest_repo)
     run(["git", "add", "-A"], cwd=dest_repo)
     run(["git", "status", "--short"], cwd=dest_repo)
     run(
@@ -515,8 +466,7 @@ def create_new_repo_and_push(
     """Create CppDigest repo, push docs to master, create local branch and push."""
     create_repo(org, submodule_name, token)
     run(["git", "init"], cwd=submodule_clone)
-    run(["git", "config", "user.email", "Boost-Translation-CI-Bot@cppdigest.local"], cwd=submodule_clone)
-    run(["git", "config", "user.name", "Boost-Translation-CI-Bot"], cwd=submodule_clone)
+    set_git_bot_config(submodule_clone)
     run(["git", "add", "-A"], cwd=submodule_clone)
     run(["git", "commit", "-m", f"Create the original documentation of {libs_ref}"], cwd=submodule_clone)
     run(["git", "branch", "-M", MASTER_BRANCH], cwd=submodule_clone)
@@ -534,58 +484,23 @@ def update_translations_submodule(
     translations_dir: str,
     org: str,
     submodule_name: str,
-    sha: str,
-    token: str,
+    branch: str,
 ) -> None:
-    """Point libs/<submodule_name> at the given SHA; add submodule if needed."""
+    """Update libs/<submodule_name> to latest commit on branch; add submodule if needed."""
     libs_path = os.path.join(translations_dir, "libs", submodule_name)
     submodule_path = f"libs/{submodule_name}"
 
-    def init_fetch_checkout_add() -> None:
-        run(
-            ["git", "submodule", "update", "--init", submodule_path],
-            cwd=translations_dir,
-            check=False,
-        )
-        run(
-            ["git", "-C", submodule_path, "fetch", "origin"],
-            cwd=translations_dir,
-            check=False,
-        )
-        run(["git", "-C", submodule_path, "checkout", sha], cwd=translations_dir)
+    if os.path.isdir(libs_path):
+        run(["git", "submodule", "update", "--init", submodule_path], cwd=translations_dir, check=False)
+        run(["git", "submodule", "update", "--remote", submodule_path], cwd=translations_dir)
         run(["git", "add", submodule_path], cwd=translations_dir)
-
-    if os.path.isdir(libs_path) and os.path.isdir(os.path.join(libs_path, ".git")):
-        init_fetch_checkout_add()
-    elif os.path.isdir(libs_path):
-        # Path exists but not inited (submodule entry in index); init instead of add.
-        init_fetch_checkout_add()
     else:
         submodule_url = f"https://github.com/{org}/{submodule_name}.git"
         run(
-            [
-                "git", "submodule", "add", "-b", MASTER_BRANCH,
-                authed_url(submodule_url, token),
-                submodule_path,
-            ],
+            ["git", "submodule", "add", "-b", branch, submodule_url, submodule_path],
             cwd=translations_dir,
         )
-        run(
-            ["git", "config", f"submodule.{submodule_path}.url", submodule_url],
-            cwd=translations_dir,
-        )
-        run(
-            ["git", "config", "-f", ".gitmodules", f"submodule.{submodule_path}.url", submodule_url],
-            cwd=translations_dir,
-        )
-        run(["git", "add", ".gitmodules"], cwd=translations_dir)
-        run(
-            ["git", "-C", submodule_path, "fetch", "origin"],
-            cwd=translations_dir,
-            check=False,
-        )
-        run(["git", "-C", submodule_path, "checkout", sha], cwd=translations_dir)
-        run(["git", "add", submodule_path], cwd=translations_dir)
+        run(["git", "add", ".gitmodules", submodule_path], cwd=translations_dir)
 
 
 def _commit_and_push_translations_branch(
@@ -623,60 +538,38 @@ def finalize_translations_repo(
     translations_dir: str,
     libs_ref: str,
     token: str,
-    updates_master: List[Tuple[str, str]],
-    updates_local: List[Tuple[str, str]],
+    updates_master: List[str],
+    updates_local: List[str],
     org: str,
 ) -> None:
     """Update boost-documentation-translations on master and local branches per prompt (3) and (4)."""
     if not updates_master and not updates_local:
         return
     run(["git", "fetch", "origin"], cwd=translations_dir, check=False)
-    rev_master = run(
-        ["git", "rev-parse", f"origin/{TRANSLATIONS_MASTER_BRANCH}"],
+    run(
+        [
+            "git", "checkout", "-B", MASTER_BRANCH,
+            f"origin/{MASTER_BRANCH}",
+        ],
         cwd=translations_dir,
-        check=False,
     )
-    if rev_master.returncode == 0:
-        run(
-            [
-                "git", "checkout", "-B", TRANSLATIONS_MASTER_BRANCH,
-                f"origin/{TRANSLATIONS_MASTER_BRANCH}",
-            ],
-            cwd=translations_dir,
-        )
-    else:
-        run(
-            ["git", "checkout", "-b", TRANSLATIONS_MASTER_BRANCH],
-            cwd=translations_dir,
-        )
-    for submodule_name, sha in updates_master:
-        update_translations_submodule(translations_dir, org, submodule_name, sha, token)
+    for submodule_name in updates_master:
+        update_translations_submodule(translations_dir, org, submodule_name, MASTER_BRANCH)
     _commit_and_push_translations_branch(
-        translations_dir, TRANSLATIONS_MASTER_BRANCH, libs_ref, token,
+        translations_dir, MASTER_BRANCH, libs_ref, token,
     )
-    rev_local = run(
-        ["git", "rev-parse", f"origin/{TRANSLATIONS_LOCAL_BRANCH}"],
+    run(
+        [
+            "git", "checkout", "-B", LOCAL_BRANCH,
+            f"origin/{LOCAL_BRANCH}",
+        ],
         cwd=translations_dir,
-        check=False,
     )
-    if rev_local.returncode == 0:
-        run(
-            [
-                "git", "checkout", "-B", TRANSLATIONS_LOCAL_BRANCH,
-                f"origin/{TRANSLATIONS_LOCAL_BRANCH}",
-            ],
-            cwd=translations_dir,
-        )
-    else:
-        run(
-            ["git", "checkout", "-b", TRANSLATIONS_LOCAL_BRANCH],
-            cwd=translations_dir,
-        )
-    # Super's local branch: record each submodule at sub's local branch (local_sha).
-    for submodule_name, sha in updates_local:
-        update_translations_submodule(translations_dir, org, submodule_name, sha, token)
+    # Super's local branch: record each submodule at sub's local branch.
+    for submodule_name in updates_local:
+        update_translations_submodule(translations_dir, org, submodule_name, LOCAL_BRANCH)
     _commit_and_push_translations_branch(
-        translations_dir, TRANSLATIONS_LOCAL_BRANCH, libs_ref, token,
+        translations_dir, LOCAL_BRANCH, libs_ref, token,
         force_push=True,
     )
 
@@ -689,27 +582,27 @@ def process_one_submodule(
     cppdigest_work: str,
     token: str,
     lang_code: Optional[str] = None,
-) -> Optional[Tuple[str, bool]]:
+) -> bool:
     """
     Clone boost submodule, prune to docs, update or create CppDigest repo.
-    Returns (target_repo, exists) for get_master_and_local_shas and finalize, or None.
+    Returns True if successful, False if skipped.
     """
     libs = get_libraries_from_repo(submodule_name, libs_ref, token=token)
     if not libs:
         print(f"  No libraries.json entries, skipping.", file=sys.stderr)
-        return None
+        return False
     paths_to_keep = doc_paths_to_keep(libs)
     if not paths_to_keep:
         print(f"  No doc paths, skipping.", file=sys.stderr)
-        return None
+        return False
 
     boost_repo_url = f"https://github.com/{BOOST_ORG}/{submodule_name}.git"
     submodule_clone = os.path.join(boost_work, submodule_name)
     try:
-        clone_repo(boost_repo_url, libs_ref, submodule_clone, token=token)
+        clone_repo(boost_repo_url, libs_ref, submodule_clone)
     except subprocess.CalledProcessError as e:
         print(f"  Clone failed: {e.stderr}", file=sys.stderr)
-        return None
+        return False
 
     run(["git", "init"], cwd=submodule_clone)
     prune_to_doc_only(submodule_clone, paths_to_keep)
@@ -720,26 +613,20 @@ def process_one_submodule(
     if exists:
         dest_repo = os.path.join(cppdigest_work, submodule_name)
         try:
-            clone_repo_keep_git(cppdigest_repo_url, MASTER_BRANCH, dest_repo, token=token)
+            clone_repo_keep_git(cppdigest_repo_url, MASTER_BRANCH, dest_repo)
         except subprocess.CalledProcessError as e:
             print(f"  clone_repo_keep_git failed: {e}", file=sys.stderr)
-            run(
-                [
-                    "git", "clone", "--depth", "1", "--branch", MASTER_BRANCH,
-                    authed_url(cppdigest_repo_url, token), dest_repo,
-                ],
-            )
+            return False
         sync_existing_repo(
             dest_repo, submodule_clone, MASTER_BRANCH, libs_ref,
             org, submodule_name, token, cppdigest_repo_url,
             lang_code=lang_code,
         )
-        return (dest_repo, True)
     else:
         create_new_repo_and_push(
             org, submodule_name, submodule_clone, cppdigest_repo_url, libs_ref, token
         )
-        return (submodule_clone, False)
+    return True
 
 
 def main() -> None:
@@ -790,29 +677,22 @@ def main() -> None:
         translations_dir = os.path.join(work, "translations")
         os.makedirs(boost_work, exist_ok=True)
         os.makedirs(cppdigest_work, exist_ok=True)
-        updates_master: List[Tuple[str, str]] = []
-        updates_local: List[Tuple[str, str]] = []
+        updates_master: List[str] = []
+        updates_local: List[str] = []
 
+        lang_code = args.lang_code.strip() or None
         for i, (submodule_name, _path_in_boost) in enumerate(lib_submodules, 1):
             print(f"[{i}/{len(lib_submodules)}] {submodule_name} ...", file=sys.stderr)
-            lang_code = args.lang_code.strip() or None
-            result = process_one_submodule(
+            success = process_one_submodule(
                 submodule_name, args.libs_ref, org,
                 boost_work, cppdigest_work, token,
                 lang_code=lang_code,
             )
-            if result is None:
+            if not success:
                 continue
-            target_repo, exists = result
-            ensure_translations_cloned(org, translations_repo, translations_dir, token)
-            cppdigest_repo_url = f"https://github.com/{org}/{submodule_name}.git"
-            try:
-                master_sha, local_sha = get_master_and_local_shas(target_repo, token)
-            except (RuntimeError, subprocess.CalledProcessError) as e:
-                print(f"  Skipping submodule pointer update: {e}", file=sys.stderr)
-                continue
-            updates_master.append((submodule_name, master_sha))
-            updates_local.append((submodule_name, local_sha))
+            ensure_translations_cloned(org, translations_repo, translations_dir)
+            updates_master.append(submodule_name)
+            updates_local.append(submodule_name)
 
         if os.path.isdir(os.path.join(translations_dir, ".git")):
             finalize_translations_repo(

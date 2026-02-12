@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Continue"
 
-$TOKEN = "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"
+$TOKEN = "..."
 
 function Invoke-Step($step, $desc, [scriptblock]$cmd) {
     Write-Host "[$step] $desc"
