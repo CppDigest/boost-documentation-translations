@@ -12,6 +12,9 @@ For each libs/ submodule:
    rebase local onto master.
 3. Update boost-documentation-translations submodule links in libs/ to point to
    latest commit of CppDigest/<submodule> master branch.
+4. If WEBLATE_URL and WEBLATE_TOKEN are set, trigger Weblate add-or-update API
+   with organization, updated submodules, lang_code, version (libs-ref), and
+   optional --weblate-extensions filter.
 """
 
 import argparse
@@ -659,6 +662,50 @@ def finalize_translations_repo(
     )
 
 
+def trigger_weblate_add_or_update(
+    weblate_url: str,
+    weblate_token: str,
+    organization: str,
+    submodules: List[str],
+    lang_code: str,
+    version: str,
+    extensions: List[str],
+) -> None:
+    """
+    POST to Weblate add-or-update endpoint (fire-and-focus). Does not raise; logs on failure.
+    """
+    if not submodules:
+        return
+    url = f"{weblate_url.rstrip('/')}/boost-endpoint/add-or-update/"
+    payload = json.dumps({
+        "organization": organization,
+        "submodules": submodules,
+        "lang_code": lang_code,
+        "version": version,
+        "extensions": extensions,
+    }).encode("utf-8")
+    req = Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {weblate_token}",
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    try:
+        with urlopen(req, timeout=5) as _:
+            pass
+        print("Weblate add-or-update triggered.", file=sys.stderr)
+    except HTTPError as e:
+        print(f"Weblate trigger HTTP error: {e.code} {e.reason}", file=sys.stderr)
+    except URLError as e:
+        print(f"Weblate trigger URL error: {e.reason}", file=sys.stderr)
+    except Exception as e:
+        print(f"Weblate trigger failed: {e}", file=sys.stderr)
+
+
 def process_one_submodule(
     submodule_name: str,
     libs_ref: str,
@@ -748,6 +795,13 @@ def main() -> None:
              "When set, only PRs from boost-<sub>-<lang_code>-translation-<version> "
              "are considered.",
     )
+    parser.add_argument(
+        "--weblate-extensions",
+        default="[]",
+        metavar="JSON",
+        help="Weblate file extensions filter as JSON array (e.g. [\".adoc\", \".md\"]). "
+             "Use [] for all supported. Only used when WEBLATE_URL and WEBLATE_TOKEN are set.",
+    )
     args = parser.parse_args()
 
     if not args.token:
@@ -765,14 +819,14 @@ def main() -> None:
     else:
         lib_submodules = get_lib_submodules(args.gitmodules_ref, token)
 
+    updates_master: List[str] = []
+    updates_local: List[str] = []
     with tempfile.TemporaryDirectory() as work:
         boost_work = os.path.join(work, "boost")
         cppdigest_work = os.path.join(work, "cppdigest")
         translations_dir = os.path.join(work, "translations")
         os.makedirs(boost_work, exist_ok=True)
         os.makedirs(cppdigest_work, exist_ok=True)
-        updates_master: List[str] = []
-        updates_local: List[str] = []
 
         lang_code = args.lang_code.strip() or None
         for i, (submodule_name, _path_in_boost) in enumerate(lib_submodules, 1):
@@ -793,6 +847,25 @@ def main() -> None:
                 translations_dir, args.libs_ref, token,
                 updates_master, updates_local, org,
             )
+
+    weblate_url = os.environ.get("WEBLATE_URL")
+    weblate_token = os.environ.get("WEBLATE_TOKEN")
+    if weblate_url and weblate_token and updates_master:
+        try:
+            weblate_extensions = json.loads(args.weblate_extensions)
+            if not isinstance(weblate_extensions, list):
+                weblate_extensions = []
+        except (json.JSONDecodeError, TypeError):
+            weblate_extensions = []
+        trigger_weblate_add_or_update(
+            weblate_url,
+            weblate_token,
+            org,
+            updates_master,
+            lang_code,
+            args.libs_ref,
+            weblate_extensions,
+        )
 
     print("Done.", file=sys.stderr)
 
