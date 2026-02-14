@@ -14,7 +14,7 @@ For each libs/ submodule:
    latest commit of CppDigest/<submodule> master branch.
 4. If WEBLATE_URL and WEBLATE_TOKEN are set, trigger Weblate add-or-update API
    with organization, updated submodules, lang_code, version (libs-ref), and
-   optional --weblate-extensions filter.
+   optional --extensions filter.
 """
 
 import argparse
@@ -254,6 +254,34 @@ def parse_submodules_list(s: str) -> List[str]:
     if s.endswith("]"):
         s = s[:-1]
     return [name.strip() for name in s.split(",") if name.strip()]
+
+
+def parse_extensions_list(s: str) -> List[str]:
+    """
+    Parse a list-like or JSON string into extension names (e.g. for Weblate filter).
+    E.g. '[.adoc, .md]' or '[".adoc", ".md"]' -> [".adoc", ".md"]. Empty string -> [].
+    """
+    if not s or not s.strip():
+        return []
+    s = s.strip()
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, list):
+            return [x if isinstance(x, str) and x.startswith(".") else f".{x}" for x in parsed if isinstance(x, str) and x]
+        return []
+    except json.JSONDecodeError:
+        pass
+    if s.startswith("["):
+        s = s[1:]
+    if s.endswith("]"):
+        s = s[:-1]
+    result = []
+    for name in s.split(","):
+        name = name.strip().strip('"').strip("'")
+        if not name:
+            continue
+        result.append(name if name.startswith(".") else f".{name}")
+    return result
 
 
 def first_segments(paths: Set[str]) -> Set[str]:
@@ -796,11 +824,11 @@ def main() -> None:
              "are considered.",
     )
     parser.add_argument(
-        "--weblate-extensions",
-        default="[]",
-        metavar="JSON",
-        help="Weblate file extensions filter as JSON array (e.g. [\".adoc\", \".md\"]). "
-             "Use [] for all supported. Only used when WEBLATE_URL and WEBLATE_TOKEN are set.",
+        "--extensions",
+        default="",
+        metavar="LIST",
+        help="List-like or JSON string of file extensions for Weblate (e.g. [.adoc, .md] or []). "
+             "Only used when WEBLATE_URL and WEBLATE_TOKEN are set.",
     )
     args = parser.parse_args()
 
@@ -851,12 +879,7 @@ def main() -> None:
     weblate_url = os.environ.get("WEBLATE_URL")
     weblate_token = os.environ.get("WEBLATE_TOKEN")
     if weblate_url and weblate_token and updates_master:
-        try:
-            weblate_extensions = json.loads(args.weblate_extensions)
-            if not isinstance(weblate_extensions, list):
-                weblate_extensions = []
-        except (json.JSONDecodeError, TypeError):
-            weblate_extensions = []
+        extensions_list = parse_extensions_list(args.extensions)
         trigger_weblate_add_or_update(
             weblate_url,
             weblate_token,
@@ -864,7 +887,7 @@ def main() -> None:
             updates_master,
             lang_code,
             args.libs_ref,
-            weblate_extensions,
+            extensions_list,
         )
 
     print("Done.", file=sys.stderr)

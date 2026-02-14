@@ -10,7 +10,7 @@
 #   submodules: List-like string of submodule names (e.g. [algorithm, system]). If set, .gitmodules is not fetched.
 #   lang_code: Language code for translation PR branch (e.g. zh_Hans). When set, only PRs from
 #     boost-<sub>-<lang_code>-translation-<version> are considered before rebasing local onto master.
-#   weblate_extensions: Optional JSON array for Weblate file extensions filter (e.g. [".adoc", ".md"]). Default [].
+#   extensions: Optional list-like or JSON string for Weblate file extensions (e.g. [.adoc, .md]). Default empty.
 #
 # Required secret: SYNC_TOKEN — PAT with repo (and org repo create) permissions for CppDigest.
 # Optional secrets (to trigger Weblate add-or-update at end): WEBLATE_URL, WEBLATE_TOKEN.
@@ -47,7 +47,7 @@ jobs:
           LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
           SUBMODULES: ${{ github.event.client_payload.submodules || '' }}
           LANG_CODE: ${{ github.event.client_payload.lang_code || '' }}
-          WEBLATE_EXTENSIONS: ${{ github.event.client_payload.weblate_extensions || '[]' }}
+          EXTENSIONS: ${{ github.event.client_payload.extensions || '' }}
           WEBLATE_URL: ${{ secrets.WEBLATE_URL }}
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
         run: |
@@ -58,4 +58,4 @@ jobs:
             --translations-repo "${{ env.TRANSLATIONS_REPO }}" \
             --submodules "$SUBMODULES" \
             --lang-code "$LANG_CODE" \
-            --weblate-extensions "$WEBLATE_EXTENSIONS"
+            --extensions "$EXTENSIONS"
