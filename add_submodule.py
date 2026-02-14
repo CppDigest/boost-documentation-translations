@@ -700,7 +700,9 @@ def trigger_weblate_add_or_update(
     extensions: List[str],
 ) -> None:
     """
-    POST to Weblate add-or-update endpoint (fire-and-focus). Does not raise; logs on failure.
+    POST to Weblate add-or-update endpoint (fire-and-forget). Sends the request and does not
+    wait for the response body; timeout is treated as success since the trigger was sent.
+    Does not raise; logs on failure.
     """
     if not submodules:
         return
@@ -729,9 +731,23 @@ def trigger_weblate_add_or_update(
     except HTTPError as e:
         print(f"Weblate trigger HTTP error: {e.code} {e.reason}", file=sys.stderr)
     except URLError as e:
-        print(f"Weblate trigger URL error: {e.reason}", file=sys.stderr)
+        msg = str(e.reason) if e.reason else str(e)
+        if "timed out" in msg.lower() or "timeout" in msg.lower():
+            print("Weblate add-or-update triggered (request sent).", file=sys.stderr)
+        else:
+            print(f"Weblate trigger URL error: {msg}", file=sys.stderr)
+    except OSError as e:
+        msg = str(e)
+        if "timed out" in msg.lower() or "timeout" in msg.lower():
+            print("Weblate add-or-update triggered (request sent).", file=sys.stderr)
+        else:
+            print(f"Weblate trigger failed: {e}", file=sys.stderr)
     except Exception as e:
-        print(f"Weblate trigger failed: {e}", file=sys.stderr)
+        msg = str(e)
+        if "timed out" in msg.lower() or "timeout" in msg.lower():
+            print("Weblate add-or-update triggered (request sent).", file=sys.stderr)
+        else:
+            print(f"Weblate trigger failed: {e}", file=sys.stderr)
 
 
 def process_one_submodule(
