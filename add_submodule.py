@@ -31,13 +31,13 @@ from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 USER_AGENT = "BoostDocsSync/1.0"
-BOOST_ORG = "boostorg"
+BOOST_ORG = "whisper67265"
 MASTER_BRANCH = "master"
 LOCAL_BRANCH = "local"
 GITHUB_API_BASE = "https://api.github.com"
 GITMODULES_URL_TEMPLATE = "https://raw.githubusercontent.com/boostorg/boost/{ref}/.gitmodules"
-LIBS_JSON_TEMPLATE = "https://raw.githubusercontent.com/boostorg/{repo}/{ref}/meta/libraries.json"
-REPO_URL_TEMPLATE = "https://github.com/boostorg/{repo}.git"
+LIBS_JSON_TEMPLATE = "https://raw.githubusercontent.com/whisper67265/{repo}/{ref}/meta/libraries.json"
+REPO_URL_TEMPLATE = "https://github.com/whisper67265/{repo}.git"
 GITMODULES_PATH_PREFIX = "path = "
 BOT_EMAIL = "Boost-Translation-CI-Bot@cppdigest.local"
 BOT_NAME = "Boost-Translation-CI-Bot"
@@ -895,16 +895,21 @@ def main() -> None:
     weblate_url = os.environ.get("WEBLATE_URL")
     weblate_token = os.environ.get("WEBLATE_TOKEN")
     if weblate_url and weblate_token and updates_master:
-        extensions_list = parse_extensions_list(args.extensions)
-        trigger_weblate_add_or_update(
-            weblate_url,
-            weblate_token,
-            org,
-            updates_master,
-            lang_code,
-            args.libs_ref,
-            extensions_list,
+        any_open_pr = any(
+            has_open_translation_pr(org, sub, args.libs_ref, token, lang_code=lang_code)
+            for sub in updates_master
         )
+        if not any_open_pr:
+            extensions_list = parse_extensions_list(args.extensions)
+            trigger_weblate_add_or_update(
+                weblate_url,
+                weblate_token,
+                org,
+                updates_master,
+                lang_code or "zh_Hans",
+                args.libs_ref,
+                extensions_list,
+            )
 
     print("Done.", file=sys.stderr)
 
