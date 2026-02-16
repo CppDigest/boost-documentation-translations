@@ -1,24 +1,25 @@
-# Add Boost Submodules from boostorg/boost to CppDigest org.
+# Sync existing Boost submodules (update docs and submodule pointers).
 #
-# Trigger: repository_dispatch with event_type "add-submodule".
+# Trigger: repository_dispatch with event_type "sync-submodule".
 # Example: POST /repos/{owner}/{repo}/dispatches
-#   Body: {"event_type": "add-submodule", "client_payload": {"version": "boost-1.90.0"}}
+#   Body: {"event_type": "sync-submodule", "client_payload": {"version": "boost-1.90.0"}}
 #
-# client_payload:
-#   lang_code: (required) Language code for Weblate (e.g. zh_Hans).
-#   version: (optional) Boost release ref (e.g. boost-1.90.0). If set: used for both boost repo (.gitmodules)
+# Submodules list is taken from .gitmodules of ORG/TRANSLATIONS_REPO at MASTER_BRANCH
+# (only libs/ entries). Same update logic as add-submodule; no new submodules are added.
+#
+# client_payload (optional):
+#   version: Boost release ref (e.g. boost-1.90.0). If set: used for both boost repo (.gitmodules)
 #     and individual library repos. If omitted: boost repo uses master, library repos use develop.
-#   submodules: (optional) List-like string of submodule names (e.g. [algorithm, system]). If set, .gitmodules is not fetched.
-#   extensions: (optional) List-like or JSON string for Weblate file extensions (e.g. [.adoc, .md]). Default empty.
+#   extensions: Optional list-like or JSON string for Weblate file extensions (e.g. [.adoc, .md]). Default empty.
 #
 # Required secret: SYNC_TOKEN — PAT with repo (and org repo create) permissions for CppDigest.
 # Optional secrets (to trigger Weblate add-or-update at end): WEBLATE_URL, WEBLATE_TOKEN.
 
-name: Add submodule
+name: Sync submodule
 
 on:
   repository_dispatch:
-    types: [add-submodule]
+    types: [sync-submodule]
 
 env:
   ORG: CppDigest
@@ -26,7 +27,7 @@ env:
   MASTER_BRANCH: master
 
 jobs:
-  add-submodule:
+  sync-submodule:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -34,27 +35,26 @@ jobs:
         with:
           token: ${{ secrets.SYNC_TOKEN }}
 
+      - name: Checkout master for .gitmodules
+        run: git checkout ${{ env.MASTER_BRANCH }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Run add-submodule script
+      - name: Run sync-submodule script
         env:
           GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
           GITMODULES_REF: ${{ github.event.client_payload.version || 'master' }}
           LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
-          SUBMODULES: ${{ github.event.client_payload.submodules || '' }}
-          LANG_CODE: ${{ github.event.client_payload.lang_code || '' }}
           EXTENSIONS: ${{ github.event.client_payload.extensions || '' }}
           WEBLATE_URL: ${{ secrets.WEBLATE_URL }}
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
         run: |
-          python add_submodule.py \
+          python sync_submodule.py \
             --gitmodules-ref "$GITMODULES_REF" \
             --libs-ref "$LIBS_REF" \
             --org "${{ env.ORG }}" \
             --translations-repo "${{ env.TRANSLATIONS_REPO }}" \
-            --submodules "$SUBMODULES" \
-            --lang-code "$LANG_CODE" \
             --extensions "$EXTENSIONS"

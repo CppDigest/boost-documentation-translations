@@ -8,7 +8,7 @@ Triggered by CI (repository_dispatch, event add-submodule). Submodule list: pass
 For each libs/ submodule:
 1. Clone boostorg repo at given ref; keep only doc folders per meta/libraries.json.
 2. Update or create CppDigest/<submodule>: push doc content to master; then ensure
-   local branch exists and, if there is no open PR from boost-<sub>-<lang>-translation-<version>,
+   local branch exists and, if there is no open PR from boost-<slug>-translation-<version>,
    rebase local onto master.
 3. Update boost-documentation-translations submodule links in libs/ to point to
    latest commit of CppDigest/<submodule> master branch.
@@ -408,9 +408,8 @@ def has_open_translation_pr(
     repo: str,
     libs_ref: str,
     token: str,
-    lang_code: Optional[str] = None,
 ) -> bool:
-    """True if repo has an open PR from boost-<sub>-<language_code>-translation-<version>."""
+    """True if repo has an open PR from boost-<slug>-translation-<version>."""
     url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/pulls?state=open"
     headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github.v3+json"}
     if token:
@@ -422,9 +421,8 @@ def has_open_translation_pr(
     except (HTTPError, URLError, json.JSONDecodeError) as e:
         print(f"Error checking open PRs: {e}", file=sys.stderr)
         return False
-    lang_pattern = r"-" + re.escape(lang_code) if lang_code else r"-.+"
     pattern = re.compile(
-        r"^boost-" + re.escape(repo) + lang_pattern + r"-translation-.+$",
+        r"^boost-" + re.escape(repo) + r"-translation-.+$",
         re.IGNORECASE,
     )
     for pr in data:
@@ -463,10 +461,9 @@ def sync_existing_repo(
     submodule_name: str,
     token: str,
     repo_url: str,
-    lang_code: Optional[str] = None,
 ) -> None:
     """Wipe dest_repo (except .git), copy from submodule_clone, commit and push.
-    If no open PR from boost-<sub>-<lang>-translation-<version>, rebase local onto master."""
+    If no open PR from boost-<slug>-translation-<version>, rebase local onto master."""
     for item in os.listdir(dest_repo):
         if item == ".git":
             continue
@@ -499,7 +496,7 @@ def sync_existing_repo(
         ["git", "push", "origin", master_branch],
         cwd=dest_repo,
     )
-    if has_open_translation_pr(org, submodule_name, libs_ref, token, lang_code=lang_code):
+    if has_open_translation_pr(org, submodule_name, libs_ref, token):
         return
     update_local_rebase_onto_master(dest_repo, token, repo_url)
 
@@ -695,7 +692,7 @@ def trigger_weblate_add_or_update(
     weblate_token: str,
     organization: str,
     submodules: List[str],
-    lang_code: str,
+    lang_code: Optional[str],
     version: str,
     extensions: List[str],
 ) -> None:
@@ -757,7 +754,6 @@ def process_one_submodule(
     boost_work: str,
     cppdigest_work: str,
     token: str,
-    lang_code: Optional[str] = None,
 ) -> bool:
     """
     Clone boost submodule, prune to docs, update or create CppDigest repo.
@@ -800,7 +796,6 @@ def process_one_submodule(
         sync_existing_repo(
             dest_repo, submodule_clone, MASTER_BRANCH, libs_ref,
             org, submodule_name, token, cppdigest_repo_url,
-            lang_code=lang_code,
         )
     else:
         create_new_repo_and_push(
@@ -835,9 +830,8 @@ def main() -> None:
         "--lang-code",
         default="",
         metavar="LANG",
-        help="Language code for translation PR branch (e.g. zh_Hans). "
-             "When set, only PRs from boost-<sub>-<lang_code>-translation-<version> "
-             "are considered.",
+        required=True,
+        help="Language code for Weblate (e.g. zh_Hans). Used when triggering add-or-update.",
     )
     parser.add_argument(
         "--extensions",
@@ -850,6 +844,9 @@ def main() -> None:
 
     if not args.token:
         print("Error: GITHUB_TOKEN or --token required", file=sys.stderr)
+        sys.exit(1)
+    if not (args.lang_code and args.lang_code.strip()):
+        print("Error: --lang-code is required and must be non-empty (e.g. zh_Hans)", file=sys.stderr)
         sys.exit(1)
 
     token = args.token
@@ -872,13 +869,12 @@ def main() -> None:
         os.makedirs(boost_work, exist_ok=True)
         os.makedirs(cppdigest_work, exist_ok=True)
 
-        lang_code = args.lang_code.strip() or None
+        lang_code = args.lang_code.strip()
         for i, (submodule_name, _path_in_boost) in enumerate(lib_submodules, 1):
             print(f"[{i}/{len(lib_submodules)}] {submodule_name} ...", file=sys.stderr)
             success = process_one_submodule(
                 submodule_name, args.libs_ref, org,
                 boost_work, cppdigest_work, token,
-                lang_code=lang_code,
             )
             if not success:
                 continue
@@ -896,7 +892,7 @@ def main() -> None:
     weblate_token = os.environ.get("WEBLATE_TOKEN")
     if weblate_url and weblate_token and updates_master:
         any_open_pr = any(
-            has_open_translation_pr(org, sub, args.libs_ref, token, lang_code=lang_code)
+            has_open_translation_pr(org, sub, args.libs_ref, token)
             for sub in updates_master
         )
         if not any_open_pr:
@@ -906,7 +902,7 @@ def main() -> None:
                 weblate_token,
                 org,
                 updates_master,
-                lang_code or "zh_Hans",
+                lang_code,
                 args.libs_ref,
                 extensions_list,
             )
