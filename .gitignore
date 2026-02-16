@@ -13,4 +13,5 @@ delete_cppdigest_lib_repos.py
 push_project.py
 
 reset_and_redeploy.ps1
-update.ps1
+update-add.ps1
+update-sync.ps1
