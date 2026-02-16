@@ -1,0 +1,8 @@
+[submodule "libs/json"]
+	path = libs/json
+	url = https://github.com/CppDigest/json.git
+	branch = master
+[submodule "libs/unordered"]
+	path = libs/unordered
+	url = https://github.com/CppDigest/unordered.git
+	branch = master
