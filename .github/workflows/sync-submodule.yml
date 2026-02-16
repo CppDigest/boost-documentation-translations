@@ -10,6 +10,7 @@
 # client_payload (optional):
 #   version: Boost release ref (e.g. boost-1.90.0). If set: used for both boost repo (.gitmodules)
 #     and individual library repos. If omitted: boost repo uses master, library repos use develop.
+#   lang_code: Optional language code for Weblate (e.g. zh_Hans). Passed to add-or-update when set.
 #   extensions: Optional list-like or JSON string for Weblate file extensions (e.g. [.adoc, .md]). Default empty.
 #
 # Required secret: SYNC_TOKEN — PAT with repo (and org repo create) permissions for CppDigest.
@@ -48,6 +49,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
           GITMODULES_REF: ${{ github.event.client_payload.version || 'master' }}
           LIBS_REF: ${{ github.event.client_payload.version || 'develop' }}
+          LANG_CODE: ${{ github.event.client_payload.lang_code || '' }}
           EXTENSIONS: ${{ github.event.client_payload.extensions || '' }}
           WEBLATE_URL: ${{ secrets.WEBLATE_URL }}
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
@@ -57,4 +59,5 @@ jobs:
             --libs-ref "$LIBS_REF" \
             --org "${{ env.ORG }}" \
             --translations-repo "${{ env.TRANSLATIONS_REPO }}" \
+            --lang-code "$LANG_CODE" \
             --extensions "$EXTENSIONS"

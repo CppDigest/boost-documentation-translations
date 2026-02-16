@@ -67,6 +67,12 @@ def main() -> None:
         help="GitHub token",
     )
     parser.add_argument(
+        "--lang-code",
+        default="",
+        metavar="LANG",
+        help="Language code for Weblate (e.g. zh_Hans). Optional; when set, passed to add-or-update.",
+    )
+    parser.add_argument(
         "--extensions",
         default="",
         metavar="LIST",
@@ -97,6 +103,7 @@ def main() -> None:
     org = args.org
     translations_repo = args.translations_repo
     libs_ref = args.libs_ref
+    lang_code = args.lang_code.strip() or None
 
     updates_master: List[str] = []
     updates_local: List[str] = []
@@ -148,7 +155,7 @@ def main() -> None:
                 weblate_token,
                 org,
                 updates_master,
-                None,
+                lang_code,
                 libs_ref,
                 extensions_list,
             )
