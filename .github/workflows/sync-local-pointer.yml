@@ -37,17 +37,27 @@ jobs:
       - name: Update submodule pointers to LOCAL_BRANCH tip
         env:
           BRANCH: ${{ env.LOCAL_BRANCH }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           set -e
           branch="$BRANCH"
+          # Ensure submodule fetch can authenticate (token may not persist from checkout)
+          auth_url() {
+            url=$(git -C "$1" config remote.origin.url 2>/dev/null) || return 1
+            case "$url" in
+              https://github.com/*) echo "https://x-access-token:${SYNC_TOKEN}@github.com/${url#https://github.com/}" ;;
+              *) echo "$url" ;;
+            esac
+          }
           # Read .gitmodules and get all submodule paths
           # For each submodule: get latest commit of its LOCAL_BRANCH, update super-repo pointer
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             [ ! -d "$path/.git" ] && continue
-            (cd "$path" && git fetch origin "$branch" 2>/dev/null || true)
+            suburl=$(auth_url "$path") && git -C "$path" remote set-url origin "$suburl"
+            (cd "$path" && git fetch origin "$branch") || true
             rev=$(git -C "$path" rev-parse "origin/$branch" 2>/dev/null) || {
-              echo "Skipping $path: origin/$branch not found"
+              echo "Skipping $path: origin/$branch not found (fetch may have failed)"
               continue
             }
             git -C "$path" checkout -q "$rev"
@@ -56,9 +66,9 @@ jobs:
           done < <(git config -f .gitmodules --get-regexp 'submodule\..*\.path' | sed 's/^[^ ]* //')
           if ! git diff --staged --quiet; then
             git -c user.name="Boost-Translation-CI-Bot" -c user.email="Boost-Translation-CI-Bot@cppdigest.local" \
-              commit -m "chore: sync submodule pointers to $branch"
+              commit -m "Update libs submodules (local branch)"
             git push origin "HEAD:$branch"
             echo "Pushed to origin/$branch"
           else
-            echo "No pointer changes; already in sync (or no submodule has origin/$branch)."
+            echo "No pointer changes. (If you see 'Skipping' above, push branch $branch in those submodule repos.)"
           fi
