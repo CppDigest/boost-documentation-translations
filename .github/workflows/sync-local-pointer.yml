@@ -40,6 +40,8 @@ jobs:
         run: |
           set -e
           branch="$BRANCH"
+          # Read .gitmodules and get all submodule paths
+          # For each submodule: get latest commit of its LOCAL_BRANCH, update super-repo pointer
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             [ ! -d "$path/.git" ] && continue
