@@ -1,9 +1,11 @@
 # Sync submodule pointers on branch "local" to the tip of each submodule's "local" branch.
 #
+# Update logic mirrors add_submodule.py (update_translations_submodule + _commit_and_push):
+# set submodule URL to authed, update --init, set submodule origin to authed,
+# update --remote (branch "local"), git add; then commit and push with authed origin.
+#
 # Workflow lives on master (default). Trigger: repository_dispatch (event_type
-# "sync-local-pointer") or schedule (every 30 minutes). On trigger, checks out
-# branch "local", reads .gitmodules, and updates each submodule pointer to the
-# latest commit of that submodule's "local" branch, then pushes to "local".
+# "sync-local-pointer") or schedule (every 30 minutes).
 #
 # Manual trigger: POST /repos/{owner}/{repo}/dispatches
 #   Body: {"event_type": "sync-local-pointer"}
@@ -41,32 +43,35 @@ jobs:
         run: |
           set -e
           branch="$BRANCH"
-          # Ensure submodule fetch can authenticate (token may not persist from checkout)
-          auth_url() {
-            url=$(git -C "$1" config remote.origin.url 2>/dev/null) || return 1
+          # Mirror add_submodule.py: authed URL for submodule config and fetch
+          authed_url() {
+            url="$1"
             case "$url" in
               https://github.com/*) echo "https://x-access-token:${SYNC_TOKEN}@github.com/${url#https://github.com/}" ;;
               *) echo "$url" ;;
             esac
           }
-          # Read .gitmodules and get all submodule paths
-          # For each submodule: get latest commit of its LOCAL_BRANCH, update super-repo pointer
           while IFS= read -r path; do
             [ -z "$path" ] && continue
-            [ ! -d "$path/.git" ] && continue
-            suburl=$(auth_url "$path") && git -C "$path" remote set-url origin "$suburl"
-            (cd "$path" && git fetch origin "$branch") || true
-            rev=$(git -C "$path" rev-parse "origin/$branch" 2>/dev/null) || {
-              echo "Skipping $path: origin/$branch not found (fetch may have failed)"
+            url=$(git config -f .gitmodules --get "submodule.$path.url" 2>/dev/null) || continue
+            suburl=$(authed_url "$url")
+            git config "submodule.$path.url" "$suburl"
+            git config "submodule.$path.branch" "$branch"
+            git submodule update --init "$path" || true
+            [ -d "$path/.git" ] || continue
+            git -C "$path" remote set-url origin "$suburl"
+            git submodule update --remote "$path" || {
+              echo "Skipping $path: update --remote failed (branch $branch may not exist)"
               continue
             }
-            git -C "$path" checkout -q "$rev"
             git add "$path"
-            echo "Updated $path -> ${rev:0:7}"
+            echo "Updated $path"
           done < <(git config -f .gitmodules --get-regexp 'submodule\..*\.path' | sed 's/^[^ ]* //')
           if ! git diff --staged --quiet; then
             git -c user.name="Boost-Translation-CI-Bot" -c user.email="Boost-Translation-CI-Bot@cppdigest.local" \
               commit -m "Update libs submodules (local branch)"
+            origin_url=$(git remote get-url origin)
+            git remote set-url origin "$(authed_url "$origin_url")"
             git push origin "HEAD:$branch"
             echo "Pushed to origin/$branch"
           else
