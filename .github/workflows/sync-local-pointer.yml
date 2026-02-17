@@ -1,8 +1,8 @@
 # Sync submodule pointers on branch "local" to the tip of each submodule's "local" branch.
 #
-# Update logic mirrors add_submodule.update_translations_submodule(): set submodule URL
-# and submodule's origin to authed URL, then "git submodule update --init" and
-# "git submodule update --remote" so fetch can authenticate; commit and push.
+# Checkout (with token) persists credentials for submodules. We set each submodule's
+# tracked branch to LOCAL_BRANCH and run "git submodule update --remote" (same idea
+# as add_submodule.update_translations_submodule), then commit and push.
 #
 # Workflow lives on master (default). Trigger: repository_dispatch (event_type
 # "sync-local-pointer") or schedule (every 30 minutes).
@@ -39,27 +39,14 @@ jobs:
       - name: Update submodule pointers to LOCAL_BRANCH tip
         env:
           BRANCH: ${{ env.LOCAL_BRANCH }}
-          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           set -e
           branch="$BRANCH"
-          # Same pattern as add_submodule.update_translations_submodule(): authed URL for
-          # submodule config and submodule's origin, then update --init and update --remote.
-          authed_url() {
-            case "$1" in
-              https://github.com/*) echo "https://x-access-token:${SYNC_TOKEN}@github.com/${1#https://github.com/}" ;;
-              *) echo "$1" ;;
-            esac
-          }
+          # Checkout already persisted credentials for submodules. Set tracked branch
+          # and update --remote (same idea as add_submodule.update_translations_submodule).
           while IFS= read -r path; do
             [ -z "$path" ] && continue
-            url=$(git config -f .gitmodules --get "submodule.${path}.url" 2>/dev/null) || continue
-            [ -z "$url" ] && continue
-            suburl=$(authed_url "$url")
-            git config "submodule.${path}.url" "$suburl"
-            git submodule update --init "$path" || true
             [ ! -d "$path/.git" ] && continue
-            git -C "$path" remote set-url origin "$suburl"
             git config "submodule.${path}.branch" "$branch"
             if ! git submodule update --remote "$path"; then
               echo "Skipping $path: update --remote failed (e.g. no branch $branch)"
