@@ -570,6 +570,11 @@ def update_translations_submodule(
             cwd=libs_path,
             check=False,
         )
+        # Tell git which branch to use for "update --remote" (e.g. local vs master).
+        run(
+            ["git", "config", f"submodule.{submodule_path}.branch", branch],
+            cwd=translations_dir,
+        )
         update_remote = run(
             ["git", "submodule", "update", "--remote", submodule_path],
             cwd=translations_dir,
