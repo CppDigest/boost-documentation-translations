@@ -1,0 +1,55 @@
+# Sync submodule pointers on branch "local" to the tip of each submodule's "local" branch.
+#
+# Workflow lives on master (default). Trigger: repository_dispatch (event_type
+# "sync-local-pointer") or schedule (every 30 minutes). On trigger, checks out
+# branch "local", reads .gitmodules, and updates each submodule pointer to the
+# latest commit of that submodule's "local" branch, then pushes to "local".
+#
+# Manual trigger: POST /repos/{owner}/{repo}/dispatches
+#   Body: {"event_type": "sync-local-pointer"}
+#
+# Required secret: SYNC_TOKEN — PAT with repo push permission for ORG/TRANSLATIONS_REPO.
+
+name: Sync local pointer
+
+on:
+  repository_dispatch:
+    types: [sync-local-pointer]
+  schedule:
+    - cron: "*/30 * * * *"
+
+env:
+  ORG: CppDigest
+  TRANSLATIONS_REPO: boost-documentation-translations
+  LOCAL_BRANCH: local
+
+jobs:
+  sync-local-pointer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_TOKEN }}
+          ref: ${{ env.LOCAL_BRANCH }}
+          submodules: "true"
+
+      - name: Update submodule pointers to LOCAL_BRANCH tip
+        env:
+          BRANCH: ${{ env.LOCAL_BRANCH }}
+        run: |
+          set -e
+          branch="$BRANCH"
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            [ ! -d "$path/.git" ] && continue
+            (cd "$path" && git fetch origin "$branch" 2>/dev/null || true)
+            rev=$(git -C "$path" rev-parse "origin/$branch" 2>/dev/null) || continue
+            git -C "$path" checkout -q "$rev"
+            git add "$path"
+          done < <(git config -f .gitmodules --get-regexp 'submodule\..*\.path' | sed 's/^[^ ]* //')
+          if ! git diff --staged --quiet; then
+            git -c user.name="Boost-Translation-CI-Bot" -c user.email="Boost-Translation-CI-Bot@cppdigest.local" \
+              commit -m "chore: sync submodule pointers to $branch"
+            git push origin "HEAD:$branch"
+          fi

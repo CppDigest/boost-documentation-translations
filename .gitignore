@@ -9,9 +9,11 @@ data/
 
 # Python files
 trigger_add_submodule.py
+trigger_sync_submodule.py
 delete_cppdigest_lib_repos.py
 push_project.py
 
 reset_and_redeploy.ps1
 update-add.ps1
 update-sync.ps1
+trigger-sync-local-pointer.ps1
