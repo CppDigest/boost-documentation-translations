@@ -48,7 +48,7 @@ jobs:
             [ -z "$path" ] && continue
             [ ! -d "$path" ] && continue
             git config "submodule.${path}.branch" "$branch"
-            git -C "$path" fetch origin "$branch" || true
+            git -C "$path" fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}" || true
             if ! git submodule update --remote "$path"; then
               echo "Skipping $path: update --remote failed (e.g. no branch $branch)"
               continue
