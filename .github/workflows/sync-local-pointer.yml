@@ -1,8 +1,9 @@
 # Sync submodule pointers on branch "local" to the tip of each submodule's "local" branch.
 #
-# Checkout (with token) persists credentials for submodules. We set each submodule's
-# tracked branch to LOCAL_BRANCH and run "git submodule update --remote" (same idea
-# as add_submodule.update_translations_submodule), then commit and push.
+# Same logic as add_submodule.finalize_translations_repo (lines 679-692): checkout
+# super-repo's local branch; for each submodule, update to that submodule's local
+# branch tip (submodule.<path>.branch + update --remote, then git add); commit and
+# push with --force. Checkout (with token) persists credentials for submodules.
 #
 # Workflow lives on master (default). Trigger: repository_dispatch (event_type
 # "sync-local-pointer") or schedule (every 30 minutes).
@@ -42,8 +43,7 @@ jobs:
         run: |
           set -e
           branch="$BRANCH"
-          # Checkout already persisted credentials for submodules. Set tracked branch
-          # and update --remote (same idea as add_submodule.update_translations_submodule).
+          # Same as add_submodule (679-692): for each submodule, set branch and update --remote, then add.
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             [ ! -d "$path/.git" ] && continue
@@ -58,7 +58,7 @@ jobs:
           if ! git diff --staged --quiet; then
             git -c user.name="Boost-Translation-CI-Bot" -c user.email="Boost-Translation-CI-Bot@cppdigest.local" \
               commit -m "Update libs submodules (local branch)"
-            git push origin "HEAD:$branch"
+            git push --force origin "HEAD:$branch"
             echo "Pushed to origin/$branch"
           else
             echo "No pointer changes. (If you see 'Skipping' above, push branch $branch in those submodule repos.)"
