@@ -532,9 +532,9 @@ def create_new_repo_and_push(
         cwd=submodule_clone,
     )
     run(["git", "push", "-u", "origin", MASTER_BRANCH], cwd=submodule_clone)
-    _add_create_tag_workflow(submodule_clone, submodule_name)
     run(["git", "push", "origin", MASTER_BRANCH], cwd=submodule_clone)
     run(["git", "checkout", "-b", LOCAL_BRANCH], cwd=submodule_clone)
+    _add_create_tag_workflow(submodule_clone, submodule_name)
     run(["git", "push", "-u", "origin", LOCAL_BRANCH], cwd=submodule_clone)
     set_default_branch(org, submodule_name, MASTER_BRANCH, token)
 
