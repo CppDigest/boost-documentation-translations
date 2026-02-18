@@ -6,7 +6,7 @@
 # push with --force. Checkout (with token) persists credentials for submodules.
 #
 # Workflow lives on master (default). Trigger: repository_dispatch (event_type
-# "sync-local-pointer") or schedule (every 30 minutes).
+# "sync-local-pointer") or schedule (every day).
 #
 # Manual trigger: POST /repos/{owner}/{repo}/dispatches
 #   Body: {"event_type": "sync-local-pointer"}
@@ -19,7 +19,7 @@ on:
   repository_dispatch:
     types: [sync-local-pointer]
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "0 0 * * *"
 
 env:
   ORG: CppDigest
