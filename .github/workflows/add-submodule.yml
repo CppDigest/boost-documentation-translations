@@ -50,7 +50,7 @@ jobs:
           WEBLATE_URL: ${{ secrets.WEBLATE_URL }}
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
         run: |
-          python add_submodule.py \
+          python .github/workflows/scripts/add_submodule.py \
             --gitmodules-ref "$GITMODULES_REF" \
             --libs-ref "$LIBS_REF" \
             --org "${{ env.ORG }}" \

@@ -432,22 +432,22 @@ def has_open_translation_pr(
     return False
 
 
-def update_local_rebase_onto_master(
+def update_local_merge_from_master(
     repo_dir: str,
     token: str,
     repo_url: str,
 ) -> None:
-    """Update local branch by rebasing onto origin/master, then push (--force)."""
+    """Update local branch by merging origin/master, then push (--force)."""
     run(["git", "fetch", "origin", MASTER_BRANCH], cwd=repo_dir)
     run(["git", "fetch", "origin", LOCAL_BRANCH], cwd=repo_dir, check=False)
     run(
         ["git", "checkout", "-B", LOCAL_BRANCH, f"origin/{LOCAL_BRANCH}"],
         cwd=repo_dir,
     )
-    run(["git", "rebase", f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
+    run(["git", "merge", f"origin/{MASTER_BRANCH}"], cwd=repo_dir)
     push_url = authed_url(repo_url, token)
     run(
-        ["git", "push", "--force", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
+        ["git", "push", push_url, f"{LOCAL_BRANCH}:{LOCAL_BRANCH}"],
         cwd=repo_dir,
     )
 
@@ -472,15 +472,7 @@ def sync_existing_repo(
             shutil.rmtree(p)
         else:
             os.remove(p)
-    for item in os.listdir(submodule_clone):
-        if item == ".git":
-            continue
-        src = os.path.join(submodule_clone, item)
-        dst = os.path.join(dest_repo, item)
-        if os.path.isdir(src):
-            shutil.copytree(src, dst)
-        else:
-            shutil.copy2(src, dst)
+    shutil.copytree(submodule_clone, dest_repo, dirs_exist_ok=True)
     set_git_bot_config(dest_repo)
     run(["git", "add", "-A"], cwd=dest_repo)
     run(
@@ -498,7 +490,22 @@ def sync_existing_repo(
     )
     if has_open_translation_pr(org, submodule_name, libs_ref, token):
         return
-    update_local_rebase_onto_master(dest_repo, token, repo_url)
+    update_local_merge_from_master(dest_repo, token, repo_url)
+
+
+def _add_create_tag_workflow(repo_dir: str, submodule_name: str) -> None:
+    """Copy create-tag.yml into .github/workflows/, patch the branch prefix, and commit."""
+    workflows_dir = os.path.join(repo_dir, ".github", "workflows")
+    os.makedirs(workflows_dir, exist_ok=True)
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "create-tag.yml")
+    dst = os.path.join(workflows_dir, "create-tag.yml")
+    with open(src, encoding="utf-8") as f:
+        content = f.read()
+    content = content.replace("boost-json-translation-", f"boost-{submodule_name}-translation-")
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(content)
+    run(["git", "add", os.path.join(".github", "workflows", "create-tag.yml")], cwd=repo_dir)
+    run(["git", "commit", "-m", "Add create-tag workflow"], cwd=repo_dir)
 
 
 def create_new_repo_and_push(
@@ -525,6 +532,8 @@ def create_new_repo_and_push(
         cwd=submodule_clone,
     )
     run(["git", "push", "-u", "origin", MASTER_BRANCH], cwd=submodule_clone)
+    _add_create_tag_workflow(submodule_clone, submodule_name)
+    run(["git", "push", "origin", MASTER_BRANCH], cwd=submodule_clone)
     run(["git", "checkout", "-b", LOCAL_BRANCH], cwd=submodule_clone)
     run(["git", "push", "-u", "origin", LOCAL_BRANCH], cwd=submodule_clone)
     set_default_branch(org, submodule_name, MASTER_BRANCH, token)
@@ -780,8 +789,7 @@ def process_one_submodule(
     except subprocess.CalledProcessError as e:
         print("  Clone failed:", _redact_authed_urls(e.stderr or ""), file=sys.stderr)
         return False
-
-    run(["git", "init"], cwd=submodule_clone)
+        
     prune_to_doc_only(submodule_clone, paths_to_keep)
 
     cppdigest_repo_url = f"https://github.com/{org}/{submodule_name}.git"

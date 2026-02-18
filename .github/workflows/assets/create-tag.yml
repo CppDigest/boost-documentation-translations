@@ -1,0 +1,45 @@
+# Create a versioned tag when a PR from boost-json-translation-{version} into local is merged.
+# Tag format: {version} (e.g. boost-1.89.0). Skipped if the tag already exists.
+# Workflow must exist on the default branch (master).
+
+name: create-tag
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [local]
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'boost-json-translation-')
+    steps:
+      - name: Extract version from source branch
+        id: version
+        run: |
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          # boost-json-translation-boost-1.89.0 -> boost-1.89.0
+          VERSION="${HEAD_REF#boost-json-translation-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout local branch with tags
+        uses: actions/checkout@v4
+        with:
+          ref: local
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git tag -l "$VERSION" | grep -q "^${VERSION}$"; then
+            echo "Tag $VERSION already exists, skipping."
+            exit 0
+          fi
+          git config user.name "Boost-Translation-CI-Bot"
+          git config user.email "Boost-Translation-CI-Bot@cppdigest.local"
+          git tag "$VERSION"
+          git push origin "$VERSION"
