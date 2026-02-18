@@ -46,7 +46,7 @@ jobs:
           # Same as add_submodule (679-692): for each submodule, set branch and update --remote, then add.
           while IFS= read -r path; do
             [ -z "$path" ] && continue
-            [ ! -d "$path/.git" ] && continue
+            [ ! -d "$path" ] && continue
             git config "submodule.${path}.branch" "$branch"
             if ! git submodule update --remote "$path"; then
               echo "Skipping $path: update --remote failed (e.g. no branch $branch)"
